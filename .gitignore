@@ -11,6 +11,7 @@ pretrained-model/zh/BART/*.bin
 
 data/zh/AIDATATANG
 data/zh/MAGICDATA
+bash_trainer.sh
 
 data/zh/AISHELL-1/audio-feature/wav2vec_feature.h5
 data/zh/AIDATATANG/audio-feature/wav2vec_feature.h5
