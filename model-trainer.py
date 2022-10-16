@@ -71,10 +71,10 @@ class Config(Tap):
     
     train_from_checkpoint: bool = False
     # 文件路径 参数配置
-    model_type: str = 'nopretrained-' # default
+    model_type: str = ''#nopretrained-' # default
 
-    mode_mode_path: str = pwd + model_type
-    mode_mode_path_dataset: str = mode_mode_path + '/' + current_dataset
+    mode_mode_path: str = ''#pwd + model_type
+    mode_mode_path_dataset: str = ''#mode_mode_path + '/' + current_dataset
     
     best_model_dir: str = ''#mode_mode_path_dataset + '/model-checkpoint/'
     test_result_dir: str = ''#mode_mode_path_dataset + '/result/'
@@ -266,7 +266,7 @@ class Trainer:
 
         # 3. init model related
         no_decay = ["bias", "LayerNorm.weight"]
-        if config.is_phoneme is True and config.is_audio is True:
+        if self.config.is_phoneme is True and self.config.is_audio is True:
             optimizer_grouped_parameters = [
                 {
                     "params": [p for n, p in self.model.named_parameters() if not any(nd in n for nd in no_decay)],
@@ -285,7 +285,7 @@ class Trainer:
                     "weight_decay": 0.0,
                 },
             ]
-        elif config.is_phoneme is True:
+        elif self.config.is_phoneme is True:
             optimizer_grouped_parameters = [
                 {
                     "params": [p for n, p in self.model.named_parameters() if not any(nd in n for nd in no_decay)],
@@ -300,7 +300,7 @@ class Trainer:
                     "weight_decay": 0.0,
                 },
             ]
-        elif config.is_audio is True:
+        elif self.config.is_audio is True:
             optimizer_grouped_parameters = [
                 {
                     "params": [p for n, p in self.model.named_parameters() if not any(nd in n for nd in no_decay)],
@@ -334,12 +334,12 @@ class Trainer:
                                )
 
         self.config.max_train_steps = len(self.train_dataloader) * self.config.epochs
-
+        self.config.num_warmup_steps = self.config.max_train_steps * 0.1
         self.lr_scheduler = get_scheduler(
             name=config.lr_scheduler_type,
             optimizer=self.optimizer,
-            num_warmup_steps=config.num_warmup_steps*2, # 前 * step 进行warm up（即让lr 从0-设定的lr）
-            num_training_steps=config.max_train_steps*2, # 最大的step
+            num_warmup_steps=config.num_warmup_steps*3, # 前 * step 进行warm up（即让lr 从0-设定的lr）
+            num_training_steps=config.max_train_steps*3, # 最大的step
         )
         # self.lr_scheduler = CustomSchedule(
         #     d_model=config.d_model,
@@ -471,6 +471,8 @@ class Trainer:
         '''handle the on batch start logits
         '''
         self.model.train()
+        self.phoneme_encoder.train()
+        self.audio_encoder.train()
 
     def on_batch_end(self):
         """handle the on batch training is ending logits
@@ -574,7 +576,10 @@ class Trainer:
         )
         self.context_data.audio_loss = output.loss.sum().detach().cpu().numpy().item()
         self.context_data.output_loss = output.loss * self.config.lambda_audio
-        self.context_data.output_loss.backward(retain_graph=True)
+        if self.config.is_jointly_train:
+            self.context_data.output_loss.backward(retain_graph=True)
+        else:
+            self.context_data.output_loss.backward()
         # output.loss.sum().backward()
         self.optimizer.step()
         self.lr_scheduler.step()        
@@ -837,6 +842,7 @@ def set_my_seed(seed):
     cudnn.deterministic = True
 
 def renew_paras(config: Config):
+    config.model_type: str = 'nopretrained-' # default
     if config.is_pretrained is True:
         config.model_type = 'pretrained-'
     if config.is_phoneme is True and config.is_audio is True:
@@ -856,6 +862,9 @@ def renew_paras(config: Config):
             config.model_type = config.model_type + 'TA-model'
     else: 
         config.model_type = config.model_type + 'T-model'
+
+    config.mode_mode_path: str = config.pwd + config.model_type
+    config.mode_mode_path_dataset: str = config.mode_mode_path + '/' + config.current_dataset
 
     config.best_model_dir: str = config.mode_mode_path_dataset + '/model-checkpoint/'
     config.test_result_dir: str = config.mode_mode_path_dataset + '/result/'
