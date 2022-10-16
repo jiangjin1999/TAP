@@ -266,24 +266,69 @@ class Trainer:
 
         # 3. init model related
         no_decay = ["bias", "LayerNorm.weight"]
-        optimizer_grouped_parameters = [
-            {
-                "params": [p for n, p in self.model.named_parameters() if not any(nd in n for nd in no_decay)],
-                "weight_decay": config.weight_decay,
-            },
-            {
-                "params": [p for n, p in self.model.named_parameters() if any(nd in n for nd in no_decay)],
-                "weight_decay": 0.0,
-            },
-            {
-                "params": [p for n, p in self.audio_encoder.named_parameters()],
-                "weight_decay": 0.0,
-            },
-            {
-                "params": [p for n, p in self.phoneme_encoder.named_parameters()],
-                "weight_decay": 0.0,
-            },
-        ]
+        if config.is_phoneme is True and config.is_audio is True:
+            optimizer_grouped_parameters = [
+                {
+                    "params": [p for n, p in self.model.named_parameters() if not any(nd in n for nd in no_decay)],
+                    "weight_decay": config.weight_decay,
+                },
+                {
+                    "params": [p for n, p in self.model.named_parameters() if any(nd in n for nd in no_decay)],
+                    "weight_decay": 0.0,
+                },
+                {
+                    "params": [p for n, p in self.audio_encoder.named_parameters()],
+                    "weight_decay": 0.0,
+                },
+                {
+                    "params": [p for n, p in self.phoneme_encoder.named_parameters()],
+                    "weight_decay": 0.0,
+                },
+            ]
+        elif config.is_phoneme is True:
+            optimizer_grouped_parameters = [
+                {
+                    "params": [p for n, p in self.model.named_parameters() if not any(nd in n for nd in no_decay)],
+                    "weight_decay": config.weight_decay,
+                },
+                {
+                    "params": [p for n, p in self.model.named_parameters() if any(nd in n for nd in no_decay)],
+                    "weight_decay": 0.0,
+                },
+                {
+                    "params": [p for n, p in self.phoneme_encoder.named_parameters()],
+                    "weight_decay": 0.0,
+                },
+            ]
+        elif config.is_audio is True:
+            optimizer_grouped_parameters = [
+                {
+                    "params": [p for n, p in self.model.named_parameters() if not any(nd in n for nd in no_decay)],
+                    "weight_decay": config.weight_decay,
+                },
+                {
+                    "params": [p for n, p in self.model.named_parameters() if any(nd in n for nd in no_decay)],
+                    "weight_decay": 0.0,
+                },
+                {
+                    "params": [p for n, p in self.audio_encoder.named_parameters()],
+                    "weight_decay": 0.0,
+                },
+            ]
+        else:
+            optimizer_grouped_parameters = [
+                {
+                    "params": [p for n, p in self.model.named_parameters() if not any(nd in n for nd in no_decay)],
+                    "weight_decay": config.weight_decay,
+                },
+                {
+                    "params": [p for n, p in self.model.named_parameters() if any(nd in n for nd in no_decay)],
+                    "weight_decay": 0.0,
+                },
+            ]
+
+        
+
         self.optimizer = AdamW(optimizer_grouped_parameters,
                                lr=config.learning_rate
                                )
@@ -809,6 +854,8 @@ def renew_paras(config: Config):
             config.model_type = config.model_type + 'jointly-TA-model'
         else:
             config.model_type = config.model_type + 'TA-model'
+    else: 
+        config.model_type = config.model_type + 'T-model'
 
     config.best_model_dir: str = config.mode_mode_path_dataset + '/model-checkpoint/'
     config.test_result_dir: str = config.mode_mode_path_dataset + '/result/'
