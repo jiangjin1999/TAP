@@ -12,6 +12,7 @@ import torch
 import torchaudio
 # from MeCab import Model
 from datasets import Metric, load_metric
+import evaluate
 from genericpath import exists
 from loguru import logger
 from sklearn.feature_selection import SelectFdr
@@ -21,6 +22,7 @@ from tap import Tap
 from torch import nn
 from torch.optim import AdamW
 from torch.utils.data import DataLoader, Dataset
+
 from torch.utils.tensorboard import SummaryWriter
 from tqdm.auto import tqdm
 from transformers import (AdamW, AutoConfig, AutoModelForSeq2SeqLM,
@@ -45,23 +47,30 @@ from utils import CustomSchedule, EarlyStopping
 class Config(Tap):
     seed: int = 2022
 
-    pwd: str = '/home/users/jiangjin/jiangjin_bupt/ASR_CORRECTION/Cross_modal/TAP/'
+    pwd: str = '/home/jiangjin/ASR_CORRECTION/TAP/'#'/home/users/jiangjin/jiangjin_bupt/ASR_CORRECTION/Cross_modal/TAP/'
 
     # 需修改参数配置
     mode: str = 'train'    
-    is_use_DDP = False
+    is_use_DDP = True
 
-    current_dataset: str = 'AISHELL-1' #['AISHELL-1', 'AIDATATANG', 'thchs'][0]
+    current_dataset: str = 'AIDATATANG' #['AISHELL-1', 'AIDATATANG', 'thchs'][0]
     is_pretrained: bool = True
-    is_phoneme: bool = True
-    is_audio: bool = True
+    is_phoneme: bool = False
+    is_audio: bool = False
+
+    #!!! 记得改 优化器的参数设置
 
     is_jointly_train: bool = False
     is_multi_task_parameters: bool = True
 
-    batch_size: int = 35
-    #AISHELL-1:50
+    batch_size: int = 100
+
+    #AISHELL-1:50  / pku:96
+        # TP:80
+        # T: 
     #AIDATATANG: 35
+        # TP: 80
+        # T: 100
     
     lambda_text: int = 1
     lambda_phoneme: int = 1
@@ -87,6 +96,8 @@ class Config(Tap):
             model_type = model_type + 'jointly-TA-model'
         else:
             model_type = model_type + 'TA-model'
+    else:
+        model_type = model_type + 'T-model'
     mode_mode_path: str = pwd + model_type
     mode_mode_path_dataset: str = mode_mode_path + '/' + current_dataset
     
@@ -297,10 +308,10 @@ class Trainer:
             #     "params": [p for n, p in self.audio_encoder.named_parameters()],
             #     "weight_decay": 0.0,
             # },
-            {
-                "params": [p for n, p in self.phoneme_encoder.named_parameters()],
-                "weight_decay": 0.0,
-            },
+            # {
+            #     "params": [p for n, p in self.phoneme_encoder.named_parameters()],
+            #     "weight_decay": 0.0,
+            # },
         ]
         self.optimizer = AdamW(optimizer_grouped_parameters,
                                lr=config.learning_rate
@@ -492,16 +503,16 @@ class Trainer:
 
             self.train_epoch_text(text_batch)
             
-            if self.config.is_phoneme:
+            if self.config.is_phoneme is True:
                 self.train_epoch_phoneme(phoneme_batch)
 
-            if self.config.is_audio:
+            if self.config.is_audio is True:
                 self.train_epoch_audio(audio_batch)
 
             # self.optimizer.zero_grad()    
             self.context_data.total_loss = self.context_data.loss + self.context_data.audio_loss + self.context_data.phoneme_loss
 
-            if self.config.is_jointly_train:
+            if self.config.is_jointly_train is True:
                 self.train_jointly()
 
             if self.config.early_stop_flag:
@@ -866,7 +877,7 @@ if __name__ == "__main__":
         model=MODEL_TYPE,
         phoneme_encoder=Phoneme_encoder,
         audio_encoder=Audio_encoder,
-        metric=load_metric(config.metric)
+        metric=evaluate.load(config.metric)
     )
     if config.mode == 'train':
         logger.add(os.path.join(config.log_path, 'train.'+config.current_dataset+'.T-model-log.txt'))
