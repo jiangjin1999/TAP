@@ -37,12 +37,14 @@ from utils import CustomSchedule, EarlyStopping
 
 # from model.models import (BartForConditionalGeneration, )
 
-# os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+# os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
 
 
 
 class Config(Tap):
+    # config 中 变量的定义和其他变量有关系的变量
+    # 如果想通过 .sh 传参数，就必须在代码中，重新进行这一步。
     seed: int = 2022
 
     pwd: str = '/home/users/jiangjin/jiangjin_bupt/ASR_CORRECTION/Cross_modal/TAP/'
@@ -59,7 +61,7 @@ class Config(Tap):
     is_jointly_train: bool = False
     is_multi_task_parameters: bool = True
 
-    batch_size: int = 35
+    batch_size: int = 30
     #AISHELL-1:50
     #AIDATATANG: 35
     
@@ -67,47 +69,28 @@ class Config(Tap):
     lambda_phoneme: int = 1
     lambda_audio: int = 1
     
-    
+    train_from_checkpoint: bool = False
     # 文件路径 参数配置
     model_type: str = 'nopretrained-' # default
-    if is_pretrained is True:
-        model_type = 'pretrained-'
-    if is_phoneme is True and is_audio is True:
-        if is_jointly_train is True:
-            model_type = model_type + 'jointly-TAP-model'
-        else:
-            model_type = model_type + 'TAP-model'
-    elif is_phoneme is True:
-        if is_jointly_train is True:
-            model_type = model_type + 'jointly-TP-model'
-        else:
-            model_type = model_type + 'TP-model'
-    elif is_audio is True:
-        if is_jointly_train is True:
-            model_type = model_type + 'jointly-TA-model'
-        else:
-            model_type = model_type + 'TA-model'
+
     mode_mode_path: str = pwd + model_type
     mode_mode_path_dataset: str = mode_mode_path + '/' + current_dataset
     
-    best_model_dir: str = mode_mode_path_dataset + '/model-checkpoint/'
-    test_result_dir: str = mode_mode_path_dataset + '/result/'
-    log_path: str =mode_mode_path_dataset + '/log/'
-    tensorboard_path: str =mode_mode_path_dataset + '/tensorboard/' 
+    best_model_dir: str = ''#mode_mode_path_dataset + '/model-checkpoint/'
+    test_result_dir: str = ''#mode_mode_path_dataset + '/result/'
+    log_path: str = ''#mode_mode_path_dataset + '/log/'
+    tensorboard_path: str = ''#mode_mode_path_dataset + '/tensorboard/' 
 
     is_zh: bool = False
     language: str = 'en'
-    if current_dataset in ['AISHELL-1', 'AIDATATANG', 'thchs']:
-        is_zh = True
-        language = 'zh'
 
-    text_data_dir: str = pwd +'data/'+ language 
+    text_data_dir: str = ''#pwd +'data/'+ language 
     
-    audio_feature_path: str = text_data_dir +'/' +current_dataset +'/audio-feature/wav2vec_feature.h5'
+    audio_feature_path: str = ''#text_data_dir +'/' +current_dataset +'/audio-feature/wav2vec_feature.h5'
 
-    pretrained_model: str = pwd + 'pretrained-model/'+language+'/BART'
-    phoneme_model_path: str = pwd + 'pretrained-model/'+language+'/phoneme_model'
-    Model_config = AutoConfig.from_pretrained(pretrained_model)
+    pretrained_model: str = ''#pwd + 'pretrained-model/'+language+'/BART'
+    phoneme_model_path: str = ''#pwd + 'pretrained-model/'+language+'/phoneme_model'
+    Model_config = None#AutoConfig.from_pretrained(pretrained_model)
 
     shuffle: bool = True
     max_seq_length: int = 50
@@ -126,7 +109,6 @@ class Config(Tap):
     early_stop = EarlyStopping(patience=5)
     device: str = 'cuda'
     metric: str = 'cer'
-    if language == 'en': metric = 'wer'
     early_stop_flag: str = False
 
     # arg for ddp
@@ -293,10 +275,10 @@ class Trainer:
                 "params": [p for n, p in self.model.named_parameters() if any(nd in n for nd in no_decay)],
                 "weight_decay": 0.0,
             },
-            # {
-            #     "params": [p for n, p in self.audio_encoder.named_parameters()],
-            #     "weight_decay": 0.0,
-            # },
+            {
+                "params": [p for n, p in self.audio_encoder.named_parameters()],
+                "weight_decay": 0.0,
+            },
             {
                 "params": [p for n, p in self.phoneme_encoder.named_parameters()],
                 "weight_decay": 0.0,
@@ -702,6 +684,9 @@ class Trainer:
         
     def on_train_start(self):
         '''inite the dev and test cer'''
+
+        if self.config.train_from_checkpoint is True:
+            self.load_model(self.config.best_model_dir + 'checkpoint_best.pt')
         # self.context_data.dev_cer = self.evaluate(self.dev_dataloader)
         # self.context_data.test_cer = self.evaluate(self.test_dataloader)
         # self.writer.add_scalar(
@@ -806,12 +791,53 @@ def set_my_seed(seed):
     cudnn.benchmark = False
     cudnn.deterministic = True
 
+def renew_paras(config: Config):
+    if config.is_pretrained is True:
+        config.model_type = 'pretrained-'
+    if config.is_phoneme is True and config.is_audio is True:
+        if config.is_jointly_train is True:
+            config.model_type = config.model_type + 'jointly-TAP-model'
+        else:
+            config.model_type = config.model_type + 'TAP-model'
+    elif config.is_phoneme is True:
+        if config.is_jointly_train is True:
+            config.model_type = config.model_type + 'jointly-TP-model'
+        else:
+            config.model_type = config.model_type + 'TP-model'
+    elif config.is_audio is True:
+        if config.is_jointly_train is True:
+            config.model_type = config.model_type + 'jointly-TA-model'
+        else:
+            config.model_type = config.model_type + 'TA-model'
+
+    config.best_model_dir: str = config.mode_mode_path_dataset + '/model-checkpoint/'
+    config.test_result_dir: str = config.mode_mode_path_dataset + '/result/'
+    config.log_path: str = config.mode_mode_path_dataset + '/log/'
+    config.tensorboard_path: str = config.mode_mode_path_dataset + '/tensorboard/' 
+
+    if config.current_dataset in ['AISHELL-1', 'AIDATATANG', 'thchs']:
+        config.is_zh = True
+        config.language = 'zh'
+    
+    config.text_data_dir: str = config.pwd +'data/'+ config.language 
+    
+    config.audio_feature_path: str = config.text_data_dir +'/' +config.current_dataset +'/audio-feature/wav2vec_feature.h5'
+
+    config.pretrained_model: str = config.pwd + 'pretrained-model/'+ config.language+'/BART'
+    config.phoneme_model_path: str = config.pwd + 'pretrained-model/'+ config.language+'/phoneme_model'
+    config.Model_config = AutoConfig.from_pretrained(config.pretrained_model)
+
+    if config.language == 'en': config.metric = 'wer'
+
+
 
 
 if __name__ == "__main__":
     config: Config = Config().parse_args(known_only=True)
 
+    renew_paras(config)
     set_my_seed(config.seed)
+
     if os.path.exists(config.mode_mode_path_dataset):
         pass
     else:

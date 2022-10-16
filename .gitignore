@@ -1,5 +1,7 @@
 pretrained-jointly-TAP-model
 pretrained-TAP-model
+pretrained-model
+data
 pretrained-model/zh/phoneme_model/*.bin
 pretrained-model/en/BART/*.bin
 pretrained-model/zh/BART/*.bin
@@ -7,7 +9,8 @@ pretrained-model/zh/BART/*.bin
 data/zh/AIDATATANG
 data/zh/MAGICDATA
 
-# data/zh/AISHELL-1/audio-feature/wav2vec_feature.h5
-# data/zh/AIDATATANG/audio-feature/wav2vec_feature.h5
+data/zh/AISHELL-1/audio-feature/wav2vec_feature.h5
+data/zh/AIDATATANG/audio-feature/wav2vec_feature.h5
+aishell_wav2vec_feature.h5
 
 
