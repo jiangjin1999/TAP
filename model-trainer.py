@@ -59,9 +59,9 @@ class Config(Tap):
     is_audio: bool = True
 
     is_jointly_train: bool = False
-    is_multi_task_parameters: bool = False
+    is_multi_task_parameters: bool = True
 
-    batch_size: int = 50
+    batch_size: int = 35
     #AISHELL-1:50
     #AIDATATANG: 35
     
@@ -69,31 +69,50 @@ class Config(Tap):
     lambda_phoneme: int = 1
     lambda_audio: int = 1
     
-    train_from_checkpoint: bool = False
-    # 文件路径 参数配置
-    model_type: str = ''#nopretrained-' # default
-
-    mode_mode_path: str = ''#pwd + model_type
-    mode_mode_path_dataset: str = ''#mode_mode_path + '/' + current_dataset
     
-    best_model_dir: str = ''#mode_mode_path_dataset + '/model-checkpoint/'
-    test_result_dir: str = ''#mode_mode_path_dataset + '/result/'
-    log_path: str = ''#mode_mode_path_dataset + '/log/'
-    tensorboard_path: str = ''#mode_mode_path_dataset + '/tensorboard/' 
+    # 文件路径 参数配置
+    model_type: str = 'nopretrained-' # default
+    if is_pretrained is True:
+        model_type = 'pretrained-'
+    if is_phoneme is True and is_audio is True:
+        if is_jointly_train is True:
+            model_type = model_type + 'jointly-TAP-model'
+        else:
+            model_type = model_type + 'TAP-model'
+    elif is_phoneme is True:
+        if is_jointly_train is True:
+            model_type = model_type + 'jointly-TP-model'
+        else:
+            model_type = model_type + 'TP-model'
+    elif is_audio is True:
+        if is_jointly_train is True:
+            model_type = model_type + 'jointly-TA-model'
+        else:
+            model_type = model_type + 'TA-model'
+    mode_mode_path: str = pwd + model_type
+    mode_mode_path_dataset: str = mode_mode_path + '/' + current_dataset
+    
+    best_model_dir: str = mode_mode_path_dataset + '/model-checkpoint/'
+    test_result_dir: str = mode_mode_path_dataset + '/result/'
+    log_path: str =mode_mode_path_dataset + '/log/'
+    tensorboard_path: str =mode_mode_path_dataset + '/tensorboard/' 
 
     is_zh: bool = False
     language: str = 'en'
+    if current_dataset in ['AISHELL-1', 'AIDATATANG', 'thchs']:
+        is_zh = True
+        language = 'zh'
 
-    text_data_dir: str = ''#pwd +'data/'+ language 
+    text_data_dir: str = pwd +'data/'+ language 
     
-    audio_feature_path: str = ''#text_data_dir +'/' +current_dataset +'/audio-feature/wav2vec_feature.h5'
+    audio_feature_path: str = text_data_dir +'/' +current_dataset +'/audio-feature/wav2vec_feature.h5'
 
-    pretrained_model: str = ''#pwd + 'pretrained-model/'+language+'/BART'
-    phoneme_model_path: str = ''#pwd + 'pretrained-model/'+language+'/phoneme_model'
-    Model_config = None#AutoConfig.from_pretrained(pretrained_model)
+    pretrained_model: str = pwd + 'pretrained-model/'+language+'/BART'
+    phoneme_model_path: str = pwd + 'pretrained-model/'+language+'/phoneme_model'
+    Model_config = AutoConfig.from_pretrained(pretrained_model)
 
     shuffle: bool = True
-    max_seq_length: int = 50
+    max_seq_length: int = 50    
     learning_rate: float = 5e-5
     weight_decay: float = 0.02
     lr_scheduler_type: str = 'linear'
@@ -109,6 +128,7 @@ class Config(Tap):
     early_stop = EarlyStopping(patience=7)
     device: str = 'cuda'
     metric: str = 'cer'
+    if language == 'en': metric = 'wer'
     early_stop_flag: str = False
 
     # arg for ddp
@@ -338,8 +358,8 @@ class Trainer:
         self.lr_scheduler = get_scheduler(
             name=config.lr_scheduler_type,
             optimizer=self.optimizer,
-            num_warmup_steps=config.num_warmup_steps, # 前 * step 进行warm up（即让lr 从0-设定的lr）
-            num_training_steps=config.max_train_steps, # 最大的step
+            num_warmup_steps=config.num_warmup_steps*2, # 前 * step 进行warm up（即让lr 从0-设定的lr）
+            num_training_steps=config.max_train_steps*2, # 最大的step
         )
         # self.lr_scheduler = CustomSchedule(
         #     d_model=config.d_model,
@@ -471,8 +491,8 @@ class Trainer:
         '''handle the on batch start logits
         '''
         self.model.train()
-        self.phoneme_encoder.train()
-        self.audio_encoder.train()
+        # self.phoneme_encoder.train()
+        # self.audio_encoder.train()
 
     def on_batch_end(self):
         """handle the on batch training is ending logits
@@ -582,7 +602,7 @@ class Trainer:
             self.context_data.output_loss.backward()
         # output.loss.sum().backward()
         self.optimizer.step()
-        # self.lr_scheduler.step()        
+        self.lr_scheduler.step()        
 
 
     def train_epoch_phoneme(self, phoneme_batch):
@@ -606,7 +626,7 @@ class Trainer:
         self.context_data.output_loss.backward()
         # output.loss.sum().backward()
         self.optimizer.step()
-        # self.lr_scheduler.step()
+        self.lr_scheduler.step()
 
 
     def train_jointly(self,):
@@ -615,7 +635,7 @@ class Trainer:
         self.context_data.output_loss  = self.context_data.output_loss/self.context_data.output_loss * self.context_data.total_loss
         self.context_data.output_loss.backward()
         self.optimizer.step()
-        # self.lr_scheduler.step()
+        self.lr_scheduler.step()
 
 
 
@@ -734,9 +754,6 @@ class Trainer:
         
     def on_train_start(self):
         '''inite the dev and test cer'''
-
-        if self.config.train_from_checkpoint is True:
-            self.load_model(self.config.best_model_dir + 'checkpoint_best.pt')
         # self.context_data.dev_cer = self.evaluate(self.dev_dataloader)
         # self.context_data.test_cer = self.evaluate(self.test_dataloader)
         # self.writer.add_scalar(
@@ -841,59 +858,12 @@ def set_my_seed(seed):
     cudnn.benchmark = False
     cudnn.deterministic = True
 
-def renew_paras(config: Config):
-    config.model_type: str = 'nopretrained-' # default
-    if config.is_pretrained is True:
-        config.model_type = 'pretrained-'
-    if config.is_phoneme is True and config.is_audio is True:
-        if config.is_jointly_train is True:
-            config.model_type = config.model_type + 'jointly-TAP-model'
-        else:
-            config.model_type = config.model_type + 'TAP-model'
-    elif config.is_phoneme is True:
-        if config.is_jointly_train is True:
-            config.model_type = config.model_type + 'jointly-TP-model'
-        else:
-            config.model_type = config.model_type + 'TP-model'
-    elif config.is_audio is True:
-        if config.is_jointly_train is True:
-            config.model_type = config.model_type + 'jointly-TA-model'
-        else:
-            config.model_type = config.model_type + 'TA-model'
-    else: 
-        config.model_type = config.model_type + 'T-model'
-
-    config.mode_mode_path: str = config.pwd + config.model_type
-    config.mode_mode_path_dataset: str = config.mode_mode_path + '/' + config.current_dataset
-
-    config.best_model_dir: str = config.mode_mode_path_dataset + '/model-checkpoint/'
-    config.test_result_dir: str = config.mode_mode_path_dataset + '/result/'
-    config.log_path: str = config.mode_mode_path_dataset + '/log/'
-    config.tensorboard_path: str = config.mode_mode_path_dataset + '/tensorboard/' 
-
-    if config.current_dataset in ['AISHELL-1', 'AIDATATANG', 'thchs']:
-        config.is_zh = True
-        config.language = 'zh'
-    
-    config.text_data_dir: str = config.pwd +'data/'+ config.language 
-    
-    config.audio_feature_path: str = config.text_data_dir +'/' +config.current_dataset +'/audio-feature/wav2vec_feature.h5'
-
-    config.pretrained_model: str = config.pwd + 'pretrained-model/'+ config.language+'/BART'
-    config.phoneme_model_path: str = config.pwd + 'pretrained-model/'+ config.language+'/phoneme_model'
-    config.Model_config = AutoConfig.from_pretrained(config.pretrained_model)
-
-    if config.language == 'en': config.metric = 'wer'
-
-
 
 
 if __name__ == "__main__":
     config: Config = Config().parse_args(known_only=True)
 
-    renew_paras(config)
     set_my_seed(config.seed)
-
     if os.path.exists(config.mode_mode_path_dataset):
         pass
     else:
