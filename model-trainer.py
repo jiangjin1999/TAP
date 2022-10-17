@@ -51,7 +51,7 @@ class Config(Tap):
 
     # 需修改参数配置
     mode: str = 'train'    
-    is_use_DDP = False
+    is_use_DDP = True
 
     current_dataset: str = 'AISHELL-1' #['AISHELL-1', 'AIDATATANG', 'thchs'][0]
     is_pretrained: bool = True
@@ -59,9 +59,9 @@ class Config(Tap):
     is_audio: bool = True
 
     is_jointly_train: bool = False
-    is_multi_task_parameters: bool = True
+    is_multi_task_parameters: bool = False
 
-    batch_size: int = 30
+    batch_size: int = 50
     #AISHELL-1:50
     #AIDATATANG: 35
     
@@ -106,7 +106,7 @@ class Config(Tap):
     audio_encoder_output_dim: int = 768
 
     # 模型相关 参数配置
-    early_stop = EarlyStopping(patience=5)
+    early_stop = EarlyStopping(patience=7)
     device: str = 'cuda'
     metric: str = 'cer'
     early_stop_flag: str = False
@@ -334,12 +334,12 @@ class Trainer:
                                )
 
         self.config.max_train_steps = len(self.train_dataloader) * self.config.epochs
-        self.config.num_warmup_steps = self.config.max_train_steps * 0.1
+        # self.config.num_warmup_steps = self.config.max_train_steps * 0.1
         self.lr_scheduler = get_scheduler(
             name=config.lr_scheduler_type,
             optimizer=self.optimizer,
-            num_warmup_steps=config.num_warmup_steps*3, # 前 * step 进行warm up（即让lr 从0-设定的lr）
-            num_training_steps=config.max_train_steps*3, # 最大的step
+            num_warmup_steps=config.num_warmup_steps, # 前 * step 进行warm up（即让lr 从0-设定的lr）
+            num_training_steps=config.max_train_steps, # 最大的step
         )
         # self.lr_scheduler = CustomSchedule(
         #     d_model=config.d_model,
@@ -530,7 +530,7 @@ class Trainer:
             # self.optimizer.zero_grad()    
             self.context_data.total_loss = self.context_data.loss + self.context_data.audio_loss + self.context_data.phoneme_loss
 
-            if self.config.is_jointly_train:
+            if self.config.is_jointly_train is True:
                 self.train_jointly()
 
             if self.config.early_stop_flag:
@@ -553,7 +553,7 @@ class Trainer:
             input_ids=input_ids, labels=labels)
 
         self.context_data.loss = output.loss.sum().detach().cpu().numpy().item()
-        self.context_data.output_loss = output.loss* self.config.lambda_text
+        self.context_data.output_loss = output.loss * self.config.lambda_text
         self.context_data.output_loss.backward()
 
         # output.loss.sum().backward() #calculate the gradient
@@ -576,13 +576,13 @@ class Trainer:
         )
         self.context_data.audio_loss = output.loss.sum().detach().cpu().numpy().item()
         self.context_data.output_loss = output.loss * self.config.lambda_audio
-        if self.config.is_jointly_train:
+        if self.config.is_jointly_train is True:
             self.context_data.output_loss.backward(retain_graph=True)
         else:
             self.context_data.output_loss.backward()
         # output.loss.sum().backward()
         self.optimizer.step()
-        self.lr_scheduler.step()        
+        # self.lr_scheduler.step()        
 
 
     def train_epoch_phoneme(self, phoneme_batch):
@@ -606,7 +606,7 @@ class Trainer:
         self.context_data.output_loss.backward()
         # output.loss.sum().backward()
         self.optimizer.step()
-        self.lr_scheduler.step()
+        # self.lr_scheduler.step()
 
 
     def train_jointly(self,):
@@ -615,7 +615,7 @@ class Trainer:
         self.context_data.output_loss  = self.context_data.output_loss/self.context_data.output_loss * self.context_data.total_loss
         self.context_data.output_loss.backward()
         self.optimizer.step()
-        self.lr_scheduler.step()
+        # self.lr_scheduler.step()
 
 
 
