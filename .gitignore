@@ -5,6 +5,7 @@ pretrained-TA-model
 pretrained-TAP-model
 pretrained-model
 data
+other-audio_feature
 pretrained-model/zh/phoneme_model/*.bin
 pretrained-model/en/BART/*.bin
 pretrained-model/zh/BART/*.bin

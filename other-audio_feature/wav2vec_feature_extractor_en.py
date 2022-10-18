@@ -45,7 +45,7 @@ import os
 from torch.utils.tensorboard import SummaryWriter
 
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "2"
+os.environ["CUDA_VISIBLE_DEVICES"] = "7"
 
 
 
@@ -95,11 +95,18 @@ class AudioDataProcessor(DataProcessor):
     def _read(self, file: str) -> List[AudioInputExample]:
         examples = []
         examples = []
+        import json
         with open(file, 'r', encoding='utf-8') as f:
-            data = f.readlines()
-            examples = [AudioInputExample(**self.string2dict(item)) for item in data]
-        # index = [i for i in range(len(examples)) if examples[i].id=='T0055G7072S0215']
-        # examples = [examples[index[0]]]
+            data = json.load(f)
+            keys_list = list(data['utts'].keys())
+            examples = []
+            for key in keys_list:
+                id = key
+                file = data['utts'][id]['input']['path']
+                text = data['utts'][id]['output']['text']
+                example = AudioInputExample(id, file, text) 
+                examples.append(example)
+
         return examples
 
     def _load_dataset(self,) -> Dataset:
@@ -111,27 +118,27 @@ class AudioDataProcessor(DataProcessor):
     def get_train_dataset(self) -> Dataset:
         return self._load_dataset()
     
-    def string2dict(self, item: str) -> List:
-        return {"id":item.split('\"')[3], "file":self.rewrite_audio_path(item.split('\"')[7]), "text": item.split('\"')[11]}
+    # def string2dict(self, item: str) -> List:
+    #     return {"id":item.split('\"')[3], "file":item.split('\"')[7], "text": item.split('\"')[11]}
         
-    def rewrite_audio_path(sefl, file_path: str):
-        file_path = file_path.split('LibriSpeech')
-        file_path = os.path.join(config.audio_data_current_path+file_path[1])
-        return file_path
+    # def rewrite_audio_path(sefl, file_path: str):
+    #     file_path = file_path.split('LibriSpeech')
+    #     file_path = os.path.join(config.audio_data_current_path+file_path[1])
+    #     return file_path
 
 class Config(Tap):
     # dataset_path: str = '/home/users/jiangjin/jiangjin_bupt/peking/huawei_asr/Model_data-all/DATA/audio_data/librispeech/'
-    audio_data_dir: str =  '/home/users/jiangjin/jiangjin_bupt/peking/huawei_asr/Model_data-all/DATA/audio_data/librispeech/train_other_500/data.list'#'../librispeech/train_clean/data.list'
+    audio_data_dir: str =  '/home/jiangjin/ASR_CORRECTION/ASR/fairseq/examples/speech_recognition/datasets/preprocessed_data/train.json'
     audio_pretrained_model: str = "facebook/wav2vec2-base-960h"
-    audio_data_current_path: str = '/home/users/jiangjin/jiangjin_bupt/Python/ASR/wenet/examples/librispeech/s0/export/LibriSpeech/'
-    dataset_name: str = 'librispeech_train_other_500' # 例子
+    # audio_data_current_path: str = '/home/users/jiangjin/jiangjin_bupt/Python/ASR/wenet/examples/librispeech/s0/export/LibriSpeech/'
+    dataset_name: str = 'librispeech_train' # 例子
     is_debug = False
-    batch_size = 128
+    batch_size = 96
     device: str = 'cuda'
     max_seq_length: int = 64
     audio_max_length: int = 65000
-    wav2vec_pretrained_model = '/home/users/jiangjin/jiangjin_bupt/peking/huawei_asr/Model_data-all/MODEL/Wav2vec_en_path/' #'../../../MODEL/Wav2vec_en_path/'
-    dataset_path = '/home/data/jiangjin/wav2vec_h5_file/'
+    wav2vec_pretrained_model = '/home/jiangjin/ASR_CORRECTION/TAP/other-audio_feature/wav2vec_pretrained_model/'
+    dataset_path = '/home/jiangjin/ASR_CORRECTION/TAP/other-audio_feature/'
     f_wav2vec_path= dataset_path + dataset_name + "_wav2vec_feature.h5"
     
     is_use_DDP = False
@@ -285,11 +292,11 @@ class Extractor:
         # group_label=self.f_wav2vec.create_group("labels")
         speechs_list = []
         for audio_batch in self.audio_train_dataloader:
-            speech_tmp_list = []
-            speechs, audio_examples = audio_batch
-            speech_tmp_list.append(speechs)
-            speech_tmp_list.append(audio_examples)
-            speechs_list.append(speechs_list)
+            # speech_tmp_list = []
+            # speechs, audio_examples = audio_batch
+            # speech_tmp_list.append(speechs)
+            # speech_tmp_list.append(audio_examples)
+            # speechs_list.append(speechs_list)
             
 
             self.train_bar.update()
