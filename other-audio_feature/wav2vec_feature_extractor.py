@@ -170,7 +170,7 @@ class Extractor:
             sampling_rate=16_000,
             return_tensors="pt",
             padding='max_length',
-            max_length=65000,
+            max_length=50000,
             truncation=True,
         )
         speechs = speechs.to(self.config.get_device())

@@ -5,6 +5,7 @@ import shutil
 from modulefinder import Module
 from re import L
 from typing import Dict, List, Optional, Tuple  # 将wav2vec processor 和 model 合并
+import pdb
 
 import h5py
 import numpy as np
@@ -61,7 +62,7 @@ class Config(Tap):
     is_jointly_train: bool = False
     is_multi_task_parameters: bool = True
 
-    batch_size: int = 35
+    batch_size: int = 60
     #AISHELL-1:50
     #AIDATATANG: 35
     
@@ -89,6 +90,8 @@ class Config(Tap):
             model_type = model_type + 'jointly-TA-model'
         else:
             model_type = model_type + 'TA-model'
+    else: 
+        model_type = model_type + 'T-model'
     mode_mode_path: str = pwd + model_type
     mode_mode_path_dataset: str = mode_mode_path + '/' + current_dataset
     
@@ -112,11 +115,11 @@ class Config(Tap):
     Model_config = AutoConfig.from_pretrained(pretrained_model)
 
     shuffle: bool = True
-    max_seq_length: int = 50    
+    max_seq_length: int = 36
     learning_rate: float = 5e-5
     weight_decay: float = 0.02
-    lr_scheduler_type: str = 'linear'
-    num_warmup_steps: int = 500
+    lr_scheduler_type: str = 'cosine'
+    num_warmup_steps: int = 200
     max_train_steps: int = 2000
     gradient_accumulation_steps: int = 1
     epochs: int = 100
@@ -189,6 +192,7 @@ class Trainer:
         self.config = config
         self.text_tokenizer = text_tokenizer
         self.audio_tokenizer = audio_processor
+        self.metric = metric
 
 
         model.resize_token_embeddings(len(text_tokenizer))
@@ -209,7 +213,7 @@ class Trainer:
             if self.config.is_phoneme is True:
                 self.phoneme_encoder = phoneme_encoder.to(self.config.get_device())
 
-        self.metric = metric
+
 
         # 2. build text & audio dataloader
         if self.config.local_rank=='0':
@@ -236,7 +240,7 @@ class Trainer:
                 collate_fn=self.convert_examples_to_features,
                 )
             if self.config.is_phoneme is True:
-                self.phoneme_train_dataloader = self.create_dataloader(
+                self.phoneme_train_dataloader = self.create_DDP_dataloader(
                     dataset=text_processor.get_train_dataset(),
                     shuffle=False,
                     collate_fn=self.conver_text_to_phoneme_feature,
@@ -244,7 +248,7 @@ class Trainer:
             else:
                 self.phoneme_train_dataloader = self.train_dataloader
             if self.config.is_audio is True:
-                self.audio_train_dataloader = self.create_dataloader(
+                self.audio_train_dataloader = self.create_DDP_dataloader(
                     dataset=text_processor.get_train_dataset(),
                     shuffle=False,
                     collate_fn=self.convert_audio_examples_to_features,
@@ -297,11 +301,19 @@ class Trainer:
                     "weight_decay": 0.0,
                 },
                 {
-                    "params": [p for n, p in self.audio_encoder.named_parameters()],
+                    "params": [p for n, p in self.audio_encoder.named_parameters() if not any(nd in n for nd in no_decay)],
+                    "weight_decay": config.weight_decay,
+                },
+                {
+                    "params": [p for n, p in self.audio_encoder.named_parameters() if any(nd in n for nd in no_decay)],
                     "weight_decay": 0.0,
                 },
                 {
-                    "params": [p for n, p in self.phoneme_encoder.named_parameters()],
+                    "params": [p for n, p in self.phoneme_encoder.named_parameters() if not any(nd in n for nd in no_decay)],
+                    "weight_decay": config.weight_decay,
+                },
+                {
+                    "params": [p for n, p in self.phoneme_encoder.named_parameters() if any(nd in n for nd in no_decay)],
                     "weight_decay": 0.0,
                 },
             ]
@@ -316,7 +328,11 @@ class Trainer:
                     "weight_decay": 0.0,
                 },
                 {
-                    "params": [p for n, p in self.phoneme_encoder.named_parameters()],
+                    "params": [p for n, p in self.phoneme_encoder.named_parameters() if not any(nd in n for nd in no_decay)],
+                    "weight_decay": config.weight_decay,
+                },
+                {
+                    "params": [p for n, p in self.phoneme_encoder.named_parameters() if any(nd in n for nd in no_decay)],
                     "weight_decay": 0.0,
                 },
             ]
@@ -331,7 +347,11 @@ class Trainer:
                     "weight_decay": 0.0,
                 },
                 {
-                    "params": [p for n, p in self.audio_encoder.named_parameters()],
+                    "params": [p for n, p in self.audio_encoder.named_parameters() if not any(nd in n for nd in no_decay)],
+                    "weight_decay": config.weight_decay,
+                },
+                {
+                    "params": [p for n, p in self.audio_encoder.named_parameters() if any(nd in n for nd in no_decay)],
                     "weight_decay": 0.0,
                 },
             ]
@@ -349,23 +369,16 @@ class Trainer:
 
         
 
-        self.optimizer = AdamW(optimizer_grouped_parameters,
-                               lr=config.learning_rate
-                               )
-
-        self.config.max_train_steps = len(self.train_dataloader) * self.config.epochs
+        self.optimizer = torch.optim.AdamW(optimizer_grouped_parameters, lr=config.learning_rate)
+        
+        self.config.max_train_steps = len(self.train_dataloader) * self.config.epochs / 4
         # self.config.num_warmup_steps = self.config.max_train_steps * 0.1
         self.lr_scheduler = get_scheduler(
             name=config.lr_scheduler_type,
             optimizer=self.optimizer,
-            num_warmup_steps=config.num_warmup_steps*2, # 前 * step 进行warm up（即让lr 从0-设定的lr）
-            num_training_steps=config.max_train_steps*2, # 最大的step
+            num_warmup_steps=config.num_warmup_steps, # 前 * step 进行warm up（即让lr 从0-设定的lr）
+            num_training_steps=config.max_train_steps, # 最大的step
         )
-        # self.lr_scheduler = CustomSchedule(
-        #     d_model=config.d_model,
-        #     optimizer=self.optimizer,
-        #     warmup_steps=config.num_warmup_steps, # 前 * step 进行warm up（即让lr 从0-设定的lr）
-        # )
 
         self.context_data = ContextContainer()
         self._init_output_dir()
@@ -499,7 +512,7 @@ class Trainer:
         """
         # 1. update global step
         self.context_data.train_step += 1
-
+        # print(self.context_data.train_step)
         self._update_train_bar()
 
         self.writer.add_scalar(
@@ -538,6 +551,7 @@ class Trainer:
         for text_batch, phoneme_batch, audio_batch in zip(self.train_dataloader, self.phoneme_train_dataloader, self.audio_train_dataloader):
             
             self.on_batch_start()
+            # pdb.set_trace()
 
             self.train_epoch_text(text_batch)
             
@@ -565,7 +579,8 @@ class Trainer:
         input_ids, labels = input_ids.to(
             self.config.get_device()), labels.to(self.config.get_device())
 
-        self.on_batch_start()
+
+        # self.on_batch_start()
 
         self.optimizer.zero_grad()    
         # forward on text data
@@ -587,6 +602,7 @@ class Trainer:
         speech_values, labels = audio_batch
         speech_values, labels = speech_values.to(
             self.config.get_device()), labels.to(self.config.get_device())
+        # pdb.set_trace()
 
         self.optimizer.zero_grad()
         speech_input_embeddings = self.audio_encoder(speech_values)
@@ -602,7 +618,7 @@ class Trainer:
             self.context_data.output_loss.backward()
         # output.loss.sum().backward()
         self.optimizer.step()
-        self.lr_scheduler.step()        
+        # self.lr_scheduler.step()        
 
 
     def train_epoch_phoneme(self, phoneme_batch):
@@ -612,9 +628,11 @@ class Trainer:
                 self.config.get_device()), pho_idx.to(
                     self.config.get_device())
         pho_lens = torch.tensor(pho_lens).to(self.config.get_device())
+        # pdb.set_trace()
+        # self.optimizer.zero_grad() # 这里累加 文本和phoneme的梯度。
         # input_shape = input_ids.size()
         self.phoneme_encoder.train()
-        self.optimizer.zero_grad()
+        
 
         phoneme_embedding = self.phoneme_encoder.forward(pho_idx, pho_lens, input_ids)
         output: Seq2SeqLMOutput = self.model(
@@ -888,6 +906,7 @@ if __name__ == "__main__":
         # 新增：DDP backend初始化
         torch.cuda.set_device('cuda:'+str(local_rank))
         dist.init_process_group(backend='nccl')  # nccl是GPU设备上最快、最推荐的后端
+        
     if config.is_pretrained==True:
         MODEL_TYPE = BartForConditionalGeneration.from_pretrained(config.pretrained_model)
     else:
