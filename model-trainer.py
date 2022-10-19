@@ -104,8 +104,7 @@ class Config(Tap):
             model_type = model_type + 'TA-model'
     else: 
         model_type = model_type + 'T-model'
-    else:
-        model_type = model_type + 'T-model'
+
     mode_mode_path: str = pwd + model_type
     mode_mode_path_dataset: str = mode_mode_path + '/' + current_dataset
     
