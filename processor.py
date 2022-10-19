@@ -58,9 +58,21 @@ class TextDataProcessor(DataProcessor):
     def _read(self, file: str) -> List[TextInputExample]:
         with open(file, 'r', encoding='utf-8') as f:
             data = f.readlines()
-            example = [TextInputExample(item.strip().split(' ')[0], item.strip().split(' ')[2], item.strip().split(' ')[1]) for item in data]
+            example = [TextInputExample(self.en_utt_process(item.strip().split(' ')[0]), item.strip().split(' ')[2], item.strip().split(' ')[1]) for item in data]
             return example
             # return example[0:1000]
+    def en_utt_process(self, item):
+        length = len(item.split('-')[2])
+        output = ''
+        if length == 1:
+            output = item.split('-')[0] + '-' + item.split('-')[1] + '-000' +item.split('-')[2]
+        elif length == 2:
+            output = item.split('-')[0] + '-' + item.split('-')[1] + '-00' +item.split('-')[2]
+        elif length == 3:
+            output = item.split('-')[0] + '-' + item.split('-')[1] + '-0' +item.split('-')[2]
+        else:
+            output = item.split('-')[0] + '-' + item.split('-')[1] + '-' +item.split('-')[2]
+        return output
     
     def _load_dataset(self, mode: str = 'train.txt') -> Dataset:
         file = os.path.join(self.data_dir, mode)

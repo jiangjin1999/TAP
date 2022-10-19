@@ -3,16 +3,17 @@ import os
 import random
 import shutil
 from modulefinder import Module
-from re import L
+# from re import L
 from typing import Dict, List, Optional, Tuple  # 将wav2vec processor 和 model 合并
 import pdb
 
 import h5py
 import numpy as np
 import torch
-import torchaudio
+# import torchaudio
 # from MeCab import Model
 from datasets import Metric, load_metric
+import evaluate
 from genericpath import exists
 from loguru import logger
 from sklearn.feature_selection import SelectFdr
@@ -22,6 +23,7 @@ from tap import Tap
 from torch import nn
 from torch.optim import AdamW
 from torch.utils.data import DataLoader, Dataset
+
 from torch.utils.tensorboard import SummaryWriter
 from tqdm.auto import tqdm
 from transformers import (AdamW, AutoConfig, AutoModelForSeq2SeqLM,
@@ -48,23 +50,33 @@ class Config(Tap):
     # 如果想通过 .sh 传参数，就必须在代码中，重新进行这一步。
     seed: int = 2022
 
-    pwd: str = '/home/users/jiangjin/jiangjin_bupt/ASR_CORRECTION/Cross_modal/TAP/'
+    pwd: str = '/home/jiangjin/ASR_CORRECTION/TAP/'#'/home/users/jiangjin/jiangjin_bupt/ASR_CORRECTION/Cross_modal/TAP/'
 
     # 需修改参数配置
     mode: str = 'train'    
     is_use_DDP = True
 
-    current_dataset: str = 'AISHELL-1' #['AISHELL-1', 'AIDATATANG', 'thchs'][0]
+    current_dataset: str = 'LIBRISPEECH'#'LIBRISPEECH_CLEAN_100'#'AIDATATANG' #['AISHELL-1', 'AIDATATANG', 'thchs'][0]
     is_pretrained: bool = True
     is_phoneme: bool = True
     is_audio: bool = True
 
+    #!!! 记得改 优化器的参数设置
+
     is_jointly_train: bool = False
     is_multi_task_parameters: bool = True
 
-    batch_size: int = 60
-    #AISHELL-1:50
+    batch_size: int = 25
+    # LIBRISPEECH_CLEAN_100: 25
+
+    #AISHELL-1:50  / pku:96
+        # TP:80
+        # T: 
     #AIDATATANG: 35
+        # TP: 80
+        # T: 100
+        
+    # LIBRISPEECH_CLEAN_100: 
     
     lambda_text: int = 1
     lambda_phoneme: int = 1
@@ -92,6 +104,8 @@ class Config(Tap):
             model_type = model_type + 'TA-model'
     else: 
         model_type = model_type + 'T-model'
+    else:
+        model_type = model_type + 'T-model'
     mode_mode_path: str = pwd + model_type
     mode_mode_path_dataset: str = mode_mode_path + '/' + current_dataset
     
@@ -115,7 +129,11 @@ class Config(Tap):
     Model_config = AutoConfig.from_pretrained(pretrained_model)
 
     shuffle: bool = True
+    # librispeech max length is 100
+    # zh : 50
     max_seq_length: int = 36
+    if language == 'en':
+        max_seq_length: int = 100
     learning_rate: float = 5e-5
     weight_decay: float = 0.02
     lr_scheduler_type: str = 'cosine'
@@ -125,6 +143,8 @@ class Config(Tap):
     epochs: int = 100
     num_batch_per_evaluation: int = 10
     audio_encoder_input_dim: int = 1024
+    if language == 'en':
+        audio_encoder_input_dim = 768
     audio_encoder_output_dim: int = 768
 
     # 模型相关 参数配置
@@ -240,7 +260,7 @@ class Trainer:
                 collate_fn=self.convert_examples_to_features,
                 )
             if self.config.is_phoneme is True:
-                self.phoneme_train_dataloader = self.create_DDP_dataloader(
+                self.phoneme_train_dataloader = self.create_DDP_DDP_dataloader(
                     dataset=text_processor.get_train_dataset(),
                     shuffle=False,
                     collate_fn=self.conver_text_to_phoneme_feature,
@@ -248,7 +268,7 @@ class Trainer:
             else:
                 self.phoneme_train_dataloader = self.train_dataloader
             if self.config.is_audio is True:
-                self.audio_train_dataloader = self.create_DDP_dataloader(
+                self.audio_train_dataloader = self.create_DDP_DDP_dataloader(
                     dataset=text_processor.get_train_dataset(),
                     shuffle=False,
                     collate_fn=self.convert_audio_examples_to_features,
@@ -555,16 +575,16 @@ class Trainer:
 
             self.train_epoch_text(text_batch)
             
-            if self.config.is_phoneme:
+            if self.config.is_phoneme is True:
                 self.train_epoch_phoneme(phoneme_batch)
 
-            if self.config.is_audio:
+            if self.config.is_audio is True:
                 self.train_epoch_audio(audio_batch)
 
             # self.optimizer.zero_grad()    
             self.context_data.total_loss = self.context_data.loss + self.context_data.audio_loss + self.context_data.phoneme_loss
 
-            if self.config.is_jointly_train is True:
+            if self.config.is_jointly_train is True is True:
                 self.train_jointly()
 
             if self.config.early_stop_flag:
@@ -879,6 +899,8 @@ def set_my_seed(seed):
 
 
 if __name__ == "__main__":
+
+
     config: Config = Config().parse_args(known_only=True)
 
     set_my_seed(config.seed)
@@ -937,7 +959,7 @@ if __name__ == "__main__":
         model=MODEL_TYPE,
         phoneme_encoder=Phoneme_encoder,
         audio_encoder=Audio_encoder,
-        metric=load_metric(config.metric)
+        metric=evaluate.load(config.metric)
     )
     if config.mode == 'train':
         logger.add(os.path.join(config.log_path, 'train.'+config.current_dataset+'.T-model-log.txt'))
