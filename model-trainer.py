@@ -3,13 +3,13 @@ import os
 import random
 import shutil
 from modulefinder import Module
-from re import L
+# from re import L
 from typing import Dict, List, Optional, Tuple  # 将wav2vec processor 和 model 合并
 
 import h5py
 import numpy as np
 import torch
-import torchaudio
+# import torchaudio
 # from MeCab import Model
 from datasets import Metric, load_metric
 import evaluate
@@ -55,17 +55,18 @@ class Config(Tap):
     mode: str = 'train'    
     is_use_DDP = True
 
-    current_dataset: str = 'AIDATATANG' #['AISHELL-1', 'AIDATATANG', 'thchs'][0]
+    current_dataset: str = 'LIBRISPEECH'#'LIBRISPEECH_CLEAN_100'#'AIDATATANG' #['AISHELL-1', 'AIDATATANG', 'thchs'][0]
     is_pretrained: bool = True
-    is_phoneme: bool = False
-    is_audio: bool = False
+    is_phoneme: bool = True
+    is_audio: bool = True
 
     #!!! 记得改 优化器的参数设置
 
     is_jointly_train: bool = False
     is_multi_task_parameters: bool = True
 
-    batch_size: int = 100
+    batch_size: int = 25
+    # LIBRISPEECH_CLEAN_100: 25
 
     #AISHELL-1:50  / pku:96
         # TP:80
@@ -73,6 +74,8 @@ class Config(Tap):
     #AIDATATANG: 35
         # TP: 80
         # T: 100
+        
+    # LIBRISPEECH_CLEAN_100: 
     
     lambda_text: int = 1
     lambda_phoneme: int = 1
@@ -98,6 +101,8 @@ class Config(Tap):
             model_type = model_type + 'jointly-TA-model'
         else:
             model_type = model_type + 'TA-model'
+    else:
+        model_type = model_type + 'T-model'
     mode_mode_path: str = pwd + model_type
     mode_mode_path_dataset: str = mode_mode_path + '/' + current_dataset
     
@@ -121,7 +126,11 @@ class Config(Tap):
     Model_config = AutoConfig.from_pretrained(pretrained_model)
 
     shuffle: bool = True
-    max_seq_length: int = 50    
+    # librispeech max length is 100
+    # zh : 50
+    max_seq_length: int = 36
+    if language == 'en':
+        max_seq_length: int = 100
     learning_rate: float = 5e-5
     weight_decay: float = 0.02
     lr_scheduler_type: str = 'linear'
@@ -131,6 +140,8 @@ class Config(Tap):
     epochs: int = 100
     num_batch_per_evaluation: int = 10
     audio_encoder_input_dim: int = 1024
+    if language == 'en':
+        audio_encoder_input_dim = 768
     audio_encoder_output_dim: int = 768
 
     # 模型相关 参数配置
@@ -245,7 +256,7 @@ class Trainer:
                 collate_fn=self.convert_examples_to_features,
                 )
             if self.config.is_phoneme is True:
-                self.phoneme_train_dataloader = self.create_dataloader(
+                self.phoneme_train_dataloader = self.create_DDP_dataloader(
                     dataset=text_processor.get_train_dataset(),
                     shuffle=False,
                     collate_fn=self.conver_text_to_phoneme_feature,
@@ -253,7 +264,7 @@ class Trainer:
             else:
                 self.phoneme_train_dataloader = self.train_dataloader
             if self.config.is_audio is True:
-                self.audio_train_dataloader = self.create_dataloader(
+                self.audio_train_dataloader = self.create_DDP_dataloader(
                     dataset=text_processor.get_train_dataset(),
                     shuffle=False,
                     collate_fn=self.convert_audio_examples_to_features,
@@ -870,6 +881,8 @@ def set_my_seed(seed):
 
 
 if __name__ == "__main__":
+
+
     config: Config = Config().parse_args(known_only=True)
 
     set_my_seed(config.seed)

@@ -8,6 +8,8 @@ import numpy as np
 import torch
 import pypinyin
 from g2p_en import G2p
+g2p = G2p()
+
 
 class phoneme_encoder(BertPreTrainedModel):
     def __init__(self, config):
