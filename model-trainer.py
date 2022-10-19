@@ -54,7 +54,7 @@ class Config(Tap):
 
     # 需修改参数配置
     mode: str = 'train'    
-    is_use_DDP = True
+    is_use_DDP = False
 
     current_dataset: str = 'LIBRISPEECH'#'LIBRISPEECH_CLEAN_100'#'AIDATATANG' #['AISHELL-1', 'AIDATATANG', 'thchs'][0]
     is_pretrained: bool = True
