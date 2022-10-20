@@ -13,7 +13,7 @@ import torch
 # import torchaudio
 # from MeCab import Model
 from datasets import Metric, load_metric
-import evaluate
+# import evaluate
 from genericpath import exists
 from loguru import logger
 from sklearn.feature_selection import SelectFdr
@@ -50,24 +50,25 @@ class Config(Tap):
     # 如果想通过 .sh 传参数，就必须在代码中，重新进行这一步。
     seed: int = 2022
 
-    pwd: str = '/home/jiangjin/ASR_CORRECTION/TAP/'#'/home/users/jiangjin/jiangjin_bupt/ASR_CORRECTION/Cross_modal/TAP/'
+    pwd: str = '/home/users/jiangjin/jiangjin_bupt/ASR_CORRECTION/Cross_modal/TAP/'#'/home/jiangjin/ASR_CORRECTION/TAP/'
 
     # 需修改参数配置
     mode: str = 'train'    
     is_use_DDP = False
 
-    current_dataset: str = 'LIBRISPEECH'#'LIBRISPEECH_CLEAN_100'#'AIDATATANG' #['AISHELL-1', 'AIDATATANG', 'thchs'][0]
+    current_dataset: str = 'LIBRISPEECH'#'LIBRISPEECH'#'LIBRISPEECH_CLEAN_100'#'AIDATATANG' #['AISHELL-1', 'AIDATATANG', 'thchs'][0]
     is_pretrained: bool = True
-    is_phoneme: bool = True
-    is_audio: bool = True
+    is_phoneme: bool = False
+    is_audio: bool = False
 
     #!!! 记得改 优化器的参数设置
 
     is_jointly_train: bool = False
     is_multi_task_parameters: bool = True
 
-    batch_size: int = 25
+    batch_size: int = 20
     # LIBRISPEECH_CLEAN_100: 25
+        # T:
 
     #AISHELL-1:50  / pku:96
         # TP:80
@@ -200,8 +201,8 @@ class Trainer:
     def __init__(
         self, config: Config,
         text_processor: DataProcessor,
-        text_tokenizer: PreTrainedTokenizer,
-        model: PreTrainedModel,
+        text_tokenizer: AutoTokenizer,
+        model: AutoModelForSeq2SeqLM,
         metric: Metric,
         audio_processor:  Optional[DataProcessor]=None,
         audio_encoder:  Optional[Module]=None,
@@ -259,7 +260,7 @@ class Trainer:
                 collate_fn=self.convert_examples_to_features,
                 )
             if self.config.is_phoneme is True:
-                self.phoneme_train_dataloader = self.create_DDP_DDP_dataloader(
+                self.phoneme_train_dataloader = self.create_DDP_dataloader(
                     dataset=text_processor.get_train_dataset(),
                     shuffle=False,
                     collate_fn=self.conver_text_to_phoneme_feature,
@@ -267,7 +268,7 @@ class Trainer:
             else:
                 self.phoneme_train_dataloader = self.train_dataloader
             if self.config.is_audio is True:
-                self.audio_train_dataloader = self.create_DDP_DDP_dataloader(
+                self.audio_train_dataloader = self.create_DDP_dataloader(
                     dataset=text_processor.get_train_dataset(),
                     shuffle=False,
                     collate_fn=self.convert_audio_examples_to_features,
@@ -390,7 +391,7 @@ class Trainer:
 
         self.optimizer = torch.optim.AdamW(optimizer_grouped_parameters, lr=config.learning_rate)
         
-        self.config.max_train_steps = len(self.train_dataloader) * self.config.epochs / 4
+        self.config.max_train_steps = len(self.train_dataloader) * self.config.epochs / 4 
         # self.config.num_warmup_steps = self.config.max_train_steps * 0.1
         self.lr_scheduler = get_scheduler(
             name=config.lr_scheduler_type,
@@ -699,20 +700,35 @@ class Trainer:
 
                 # forward on dev/test data
                 # add .module for multi-GPU
-                Output: Seq2SeqLMOutput = self.model(
-                    input_ids=input_ids)
+            #  Output: Seq2SeqLMOutput = self.model(
+            #         input_ids=input_ids)
 
-                generated_tokens = torch.argmax(Output.logits, dim=2)
+            #     generated_tokens = torch.argmax(Output.logits, dim=2)
+            #     generated_tokens = generated_tokens.detach().cpu().numpy()
+            #     labels = labels.detach().cpu().numpy()  
+                if self.config.is_use_DDP is True:
+                    max_token = input_ids.shape[1]
+                    generated_tokens: Seq2SeqLMOutput = self.model.module.generate(
+                        input_ids=input_ids, max_length=max_token)
+                else:
+                    max_token = input_ids.shape[1]
+                    generated_tokens: Seq2SeqLMOutput = self.model.generate(
+                        input_ids=input_ids, max_length=max_token)
+                    
+
                 generated_tokens = generated_tokens.detach().cpu().numpy()
-                labels = labels.detach().cpu().numpy()
+                labels = labels.detach().cpu().numpy() 
 
                 decoded_preds = self.text_tokenizer.batch_decode(
                     generated_tokens, skip_special_tokens=True)
                 decoded_labels = self.text_tokenizer.batch_decode(
                     labels, skip_special_tokens=True)
-
-                decoded_preds = [decoded_pred.replace(' ','') for decoded_pred in decoded_preds]
-                decoded_labels = [decoded_label.replace(' ','') for decoded_label in decoded_labels]
+                if self.config.language == 'en':
+                    decoded_preds = [decoded_pred for decoded_pred in decoded_preds]
+                    decoded_labels = [decoded_label for decoded_label in decoded_labels]
+                else:
+                    decoded_preds = [decoded_pred.replace(' ','') for decoded_pred in decoded_preds]
+                    decoded_labels = [decoded_label.replace(' ','') for decoded_label in decoded_labels]
 
                 all_decoded_preds = all_decoded_preds + decoded_preds
                 all_decoded_labels = all_decoded_labels + decoded_labels
@@ -832,20 +848,34 @@ class Trainer:
 
                 # forward on dev/test data
                 # add .module for multi-GPU
-                Output: Seq2SeqLMOutput = self.model(
-                    input_ids=input_ids)
+            #  Output: Seq2SeqLMOutput = self.model(
+            #         input_ids=input_ids)
 
-                generated_tokens = torch.argmax(Output.logits, dim=2)
+            #     generated_tokens = torch.argmax(Output.logits, dim=2)
+            #     generated_tokens = generated_tokens.detach().cpu().numpy()
+            #     labels = labels.detach().cpu().numpy()  
+                if self.config.is_use_DDP is True:
+                    max_token = input_ids.shape[1]
+                    generated_tokens: Seq2SeqLMOutput = self.model.module.generate(
+                        input_ids=input_ids, max_length=max_token)
+                else:
+                    max_token = input_ids.shape[1]
+                    generated_tokens: Seq2SeqLMOutput = self.model.generate(
+                        input_ids=input_ids, max_length=max_token)
+
                 generated_tokens = generated_tokens.detach().cpu().numpy()
-                labels = labels.detach().cpu().numpy()
-
+                labels = labels.detach().cpu().numpy() 
                 decoded_preds = self.text_tokenizer.batch_decode(
                     generated_tokens, skip_special_tokens=True)
                 decoded_labels = self.text_tokenizer.batch_decode(
                     labels, skip_special_tokens=True)
 
-                decoded_preds = [decoded_pred.replace(' ','') for decoded_pred in decoded_preds]
-                decoded_labels = [decoded_label.replace(' ','') for decoded_label in decoded_labels]
+                if self.config.language == 'en':
+                    decoded_preds = [decoded_pred for decoded_pred in decoded_preds]
+                    decoded_labels = [decoded_label for decoded_label in decoded_labels]
+                else:
+                    decoded_preds = [decoded_pred.replace(' ','') for decoded_pred in decoded_preds]
+                    decoded_labels = [decoded_label.replace(' ','') for decoded_label in decoded_labels]
 
                 all_decoded_preds = all_decoded_preds + decoded_preds
                 all_decoded_labels = all_decoded_labels + decoded_labels
@@ -929,7 +959,7 @@ if __name__ == "__main__":
         dist.init_process_group(backend='nccl')  # nccl是GPU设备上最快、最推荐的后端
         
     if config.is_pretrained==True:
-        MODEL_TYPE = BartForConditionalGeneration.from_pretrained(config.pretrained_model)
+        MODEL_TYPE = AutoModelForSeq2SeqLM.from_pretrained(config.pretrained_model)
     else:
         MODEL_TYPE = AutoModelForSeq2SeqLM.from_config(config.Model_config)
 
@@ -958,7 +988,7 @@ if __name__ == "__main__":
         model=MODEL_TYPE,
         phoneme_encoder=Phoneme_encoder,
         audio_encoder=Audio_encoder,
-        metric=evaluate.load(config.metric)
+        metric=load_metric(config.metric)
     )
     if config.mode == 'train':
         logger.add(os.path.join(config.log_path, 'train.'+config.current_dataset+'.T-model-log.txt'))

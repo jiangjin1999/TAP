@@ -59,12 +59,12 @@ class TextDataProcessor(DataProcessor):
         with open(file, 'r', encoding='utf-8') as f:
             data = f.readlines()
             if 'LIBRISPEECH' in file:
-                print('data processor for librispeech')
-                example = [TextInputExample(self.en_utt_process(item.strip().split(' ')[0]), item.strip().split(' ')[2], item.strip().split(' ')[1]) for item in data]
+                # print('data processor for librispeech')
+                example = [TextInputExample(self.en_utt_process(item.strip().split('|')[0]), item.strip().split('|')[2], item.strip().split('|')[1]) for item in data]
             else:
                 example = [TextInputExample(item.strip().split(' ')[0], item.strip().split(' ')[2], item.strip().split(' ')[1]) for item in data]
-            return example
-            # return example[0:1000]
+            # return example
+            return example[0:1000]
             
     def en_utt_process(self, item):
         length = len(item.split('-')[2])
