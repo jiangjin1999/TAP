@@ -63,8 +63,8 @@ class TextDataProcessor(DataProcessor):
                 example = [TextInputExample(self.en_utt_process(item.strip().split('|')[0]), item.strip().split('|')[2], item.strip().split('|')[1]) for item in data]
             else:
                 example = [TextInputExample(item.strip().split(' ')[0], item.strip().split(' ')[2], item.strip().split(' ')[1]) for item in data]
-            # return example
-            return example[0:1000]
+            return example
+            # return example[0:1000]
             
     def en_utt_process(self, item):
         length = len(item.split('-')[2])
@@ -93,6 +93,7 @@ class TextDataProcessor(DataProcessor):
         
     def get_test_dataset(self) -> Dataset:
         return self._load_dataset(self.dataset+'/'+self.dataset+'_test.txt')
+        # return self._load_dataset(self.dataset+'/'+self.dataset+'_test-other.txt')
 
 
 

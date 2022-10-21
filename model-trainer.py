@@ -58,17 +58,17 @@ class Config(Tap):
 
     current_dataset: str = 'LIBRISPEECH'#'LIBRISPEECH'#'LIBRISPEECH_CLEAN_100'#'AIDATATANG' #['AISHELL-1', 'AIDATATANG', 'thchs'][0]
     is_pretrained: bool = True
-    is_phoneme: bool = False
-    is_audio: bool = False
+    is_phoneme: bool = True
+    is_audio: bool = True
 
     #!!! 记得改 优化器的参数设置
 
     is_jointly_train: bool = False
     is_multi_task_parameters: bool = True
 
-    batch_size: int = 20
+    batch_size: int = 25
     # LIBRISPEECH_CLEAN_100: 25
-        # T:
+        # T:50
 
     #AISHELL-1:50  / pku:96
         # TP:80
@@ -836,6 +836,8 @@ class Trainer:
             self.load_model(self.config.best_model_dir + 'checkpoint_best.pt')
 
         self.model.eval()
+        
+        all_decoded_inputs = []
 
         all_decoded_preds = []
         all_decoded_labels = []
@@ -865,20 +867,40 @@ class Trainer:
 
                 generated_tokens = generated_tokens.detach().cpu().numpy()
                 labels = labels.detach().cpu().numpy() 
+                
+                if FLAG is not None:
+                    pass
+                else:
+                    decoded_inputs = self.text_tokenizer.batch_decode(
+                        input_ids, skip_special_tokens=True)
+                
                 decoded_preds = self.text_tokenizer.batch_decode(
                     generated_tokens, skip_special_tokens=True)
                 decoded_labels = self.text_tokenizer.batch_decode(
                     labels, skip_special_tokens=True)
 
                 if self.config.language == 'en':
+                    if FLAG is not None:
+                        pass
+                    else:
+                        decoded_inputs = [decoded_input for decoded_input in decoded_inputs]
                     decoded_preds = [decoded_pred for decoded_pred in decoded_preds]
                     decoded_labels = [decoded_label for decoded_label in decoded_labels]
                 else:
                     decoded_preds = [decoded_pred.replace(' ','') for decoded_pred in decoded_preds]
                     decoded_labels = [decoded_label.replace(' ','') for decoded_label in decoded_labels]
-
+                if FLAG is not None:
+                    pass
+                else:
+                    all_decoded_inputs = all_decoded_inputs + decoded_inputs
+                
                 all_decoded_preds = all_decoded_preds + decoded_preds
                 all_decoded_labels = all_decoded_labels + decoded_labels
+        if FLAG is not None:
+            pass
+        else:
+            raw_score = self.metric.compute(
+                predictions=all_decoded_inputs, references=all_decoded_labels)
 
         metric_score = self.metric.compute(
             predictions=all_decoded_preds, references=all_decoded_labels)
@@ -892,6 +914,10 @@ class Trainer:
         #     global_step=self.context_data.dev_step
         # )
         if self.config.local_rank=='0':
+            if FLAG is not None:
+                pass
+            else:
+                logger.info(f'raw/cer is {raw_score}')
             logger.info(f'test/cer is {self.context_data.test_cer}')
         # add test cer every time evaluate test data
         self.model.train()
@@ -997,8 +1023,8 @@ if __name__ == "__main__":
         trainer.train()
     elif config.mode == 'test':
         logger.add(os.path.join(config.log_path, 'test.'+config.current_dataset+'.T-model-log.txt'))
-        if config.local_rank=='0':
-            logger.info(config)
+        # if config.local_rank=='0':
+            # logger.info(config)
         trainer.predict()
 
 
