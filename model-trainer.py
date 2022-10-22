@@ -20,7 +20,7 @@ from sklearn.feature_selection import SelectFdr
 from sqlalchemy import false
 from sympy import true
 from tap import Tap
-from torch import nn
+from torch import nn, tensor
 from torch.optim import AdamW
 from torch.utils.data import DataLoader, Dataset
 
@@ -36,7 +36,7 @@ from model.audio_encoder import *
 from model.modeling_bart import BartForConditionalGeneration
 from model.phoneme_encoder import *
 from processor import DataProcessor, TextDataProcessor, TextInputExample
-from utils import CustomSchedule, EarlyStopping
+from utils import CustomSchedule, EarlyStopping, Similarity
 
 # from model.models import (BartForConditionalGeneration, )
 
@@ -54,19 +54,25 @@ class Config(Tap):
 
     # 需修改参数配置
     mode: str = 'train'    
-    is_use_DDP = False
+    is_use_DDP = True
 
-    current_dataset: str = 'LIBRISPEECH'#'LIBRISPEECH'#'LIBRISPEECH_CLEAN_100'#'AIDATATANG' #['AISHELL-1', 'AIDATATANG', 'thchs'][0]
+    current_dataset: str = 'LIBRISPEECH_CLEAN'#'LIBRISPEECH'#'LIBRISPEECH_CLEAN_100'#'AIDATATANG' #['AISHELL-1', 'AIDATATANG', 'thchs'][0]
     is_pretrained: bool = True
-    is_phoneme: bool = True
-    is_audio: bool = True
+    is_phoneme: bool = False
+    is_audio: bool = False
 
     #!!! 记得改 优化器的参数设置
 
     is_jointly_train: bool = False
-    is_multi_task_parameters: bool = True
+    is_CL_train: bool = False # 是否使用对比学习loss训练。
+    lambda_CL_TA = 1
+    lambda_CL_AP = 0.5
+    lambda_CL_PT = 0.5
+    lambda_CL = 0.1
+    
+    # is_multi_task_parameters: bool = True
 
-    batch_size: int = 25
+    batch_size: int = 20
     # LIBRISPEECH_CLEAN_100: 25
         # T:50
 
@@ -128,7 +134,7 @@ class Config(Tap):
     phoneme_model_path: str = pwd + 'pretrained-model/'+language+'/phoneme_model'
     Model_config = AutoConfig.from_pretrained(pretrained_model)
 
-    shuffle: bool = True
+    shuffle: bool = False
     # librispeech max length is 100
     # zh : 50
     max_seq_length: int = 36
@@ -159,6 +165,8 @@ class Config(Tap):
 
     # for CustomSchedule
     d_model = 768
+    
+    sim = Similarity(temp=0.05)
 
     def get_device(self):
         """return the device"""
@@ -187,6 +195,10 @@ class ContextContainer:
         self.audio_loss = 0
         self.phoneme_loss = 0
         self.total_loss = 0
+        self.CL_loss = 0 # 三个对比学习loss的求和
+        self.text_encoder_embedding = 0
+        self.audio_encoder_embedding = 0
+        self.phoneme_encoder_embedding = 0
         self.dev_loss = 0
         self.output_loss = 0
         self.logits = 0
@@ -607,6 +619,9 @@ class Trainer:
         output: Seq2SeqLMOutput = self.model(
             input_ids=input_ids, labels=labels)
 
+        if self.config.is_CL_train is True:
+            self.context_data.text_encoder_embedding = output.encoder_last_hidden_state[:,0]
+
         self.context_data.loss = output.loss.sum().detach().cpu().numpy().item()
         self.context_data.output_loss = output.loss * self.config.lambda_text
         self.context_data.output_loss.backward()
@@ -630,6 +645,11 @@ class Trainer:
             inputs_embeds=speech_input_embeddings,
             labels=labels
         )
+        
+        if self.config.is_CL_train is True:
+            self.context_data.audio_encoder_embedding = output.encoder_last_hidden_state[:,0]
+        
+        
         self.context_data.audio_loss = output.loss.sum().detach().cpu().numpy().item()
         self.context_data.output_loss = output.loss * self.config.lambda_audio
         if self.config.is_jointly_train is True:
@@ -659,6 +679,10 @@ class Trainer:
             inputs_embeds=phoneme_embedding,
             labels=labels
         )
+
+        if self.config.is_CL_train is True:
+            self.context_data.phoneme_encoder_embedding = output.encoder_last_hidden_state[:,0]
+        
         self.context_data.phoneme_loss = output.loss.sum().detach().cpu().numpy().item()
         self.context_data.output_loss = output.loss* self.config.lambda_phoneme
         self.context_data.output_loss.backward()
@@ -670,12 +694,37 @@ class Trainer:
     def train_jointly(self,):
         # self.optimizer.zero_grad()
         # self.context_data.total_loss.sum().backward() #calculate the gradient
-        self.context_data.output_loss  = self.context_data.output_loss/self.context_data.output_loss * self.context_data.total_loss
+        
+        if self.config.is_CL_train is True:
+            loss_fct = nn.CrossEntropyLoss()
+            # 计算TA之间的CL loss
+            cos_sim = self.config.sim(self.context_data.text_encoder_embedding.unsqueeze(1),\
+                self.context_data.audio_encoder_embedding.unsqueeze(0))
+            labels = torch.arange(cos_sim.size(0)).long().to(self.config.get_device())
+            TA_CL_loss = loss_fct(cos_sim, labels)
+            # 计算AP之间的CL loss
+            cos_sim = self.config.sim(self.context_data.audio_encoder_embedding.unsqueeze(1),\
+                self.context_data.phoneme_encoder_embedding.unsqueeze(0))
+            labels = torch.arange(cos_sim.size(0)).long().to(self.config.get_device())
+            AP_CL_loss = loss_fct(cos_sim, labels)
+            # 计算PT之间的CL loss
+            cos_sim = self.config.sim(self.context_data.audio_encoder_embedding.unsqueeze(1),\
+                self.context_data.text_encoder_embedding.unsqueeze(0))
+            labels = torch.arange(cos_sim.size(0)).long().to(self.config.get_device())
+            PT_CL_loss = loss_fct(cos_sim, labels)
+            # 对三个模态之间的loss加权求和
+            self.context_data.CL_loss =  self.config.lambda_CL_TA * TA_CL_loss \
+                + self.config.lambda_CL_AP * AP_CL_loss \
+                    + self.config.lambda_CL_PT * PT_CL_loss
+            self.context_data.total_loss = self.context_data.total_loss + self.config.lambda_CL * self.context_data.CL_loss
+        else:
+            self.context_data.output_loss  = self.context_data.output_loss/self.context_data.output_loss * self.context_data.total_loss
         self.context_data.output_loss.backward()
         self.optimizer.step()
         self.lr_scheduler.step()
 
-
+    # def comput_CL_loss(self, Modal_I, Modal_II):
+        
 
         
 

@@ -21,9 +21,21 @@ from torch.nn.parameter import Parameter
 from typing import List
 import numpy as np
 import torch
+import torch.nn as nn
 from torch.optim.lr_scheduler import LambdaLR
 
+class Similarity(nn.Module):
+    """
+    Dot product or cosine similarity
+    """
 
+    def __init__(self, temp):
+        super().__init__()
+        self.temp = temp
+        self.cos = nn.CosineSimilarity(dim=-1)
+
+    def forward(self, x, y):
+        return self.cos(x, y) / self.temp
 
 class CustomSchedule(object):
     def __init__(self, d_model, warmup_steps=4000, optimizer=None):
