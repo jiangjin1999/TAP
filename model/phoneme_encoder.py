@@ -149,8 +149,10 @@ class Phoneme2(object):
         pho_vocab += [chr(x) for x in range(ord('A'), ord('Z') + 1)]
         pho_vocab += ['\'']
         pho_vocab += ['.']
-        pho_vocab += ['U']
-        assert len(pho_vocab) == 35
+        pho_vocab += ['#'] # 表示为空
+        pho_vocab += ['*'] # <s> 表示开始
+        pho_vocab += ['**'] # <s> 表示结束
+        assert len(pho_vocab) == 37
         self.pho_vocab_size = len(pho_vocab)
         self.pho_vocab = {c: idx for idx, c in enumerate(pho_vocab)}
 
@@ -159,8 +161,12 @@ class Phoneme2(object):
 
     @staticmethod
     def get_my_phoneme(c):
-        if c == '<s>' or c == '<pad>' or c == '</s>':
-            return 'U'
+        if c == '<s>':
+            return '*'
+        if c == '</s>':
+            return '**'
+        if c == '<pad>':
+            return '#'
         s = g2p(c)
         str_split = ' ' #一个单词内的几部分音素内容，用空格分割开来。 
         s = str_split.join(s)
@@ -183,7 +189,7 @@ class Phoneme2(object):
         # chars = split_chars_string_2_words(chars)# 把chars中的每个字符分开来
         pinyins = list(map(self.get_my_phoneme, chars)) # 对每个字进行 pinyin化 ，如果是非char（pad等），返回U。如果是一个字，返回pinyin。
         pinyin_ids = [list(map(self.pho_vocab.get, pinyin)) for pinyin in pinyins]# 把 拼音字母转化成，ids
-        pinyin_lens = [len(pinyin) for pinyin in pinyins] # 每个char 的拼音的长度
+        pinyin_lens = [len(pinyin) for pinyin in pinyin_ids] # 每个char 的拼音的长度
         
         try: 
             pinyin_list = [torch.tensor(x) for x in pinyin_ids]  
