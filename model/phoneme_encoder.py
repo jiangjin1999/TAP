@@ -1,3 +1,4 @@
+from operator import index
 import torch
 
 from datasets import load_dataset
@@ -42,6 +43,7 @@ class phoneme_encoder(BertPreTrainedModel):
             enforce_sorted=False,
         ) 
         except Exception as e:
+            print('phoneme-encoder:')
             print(e)
         
         _, pho_hiddens = self.pho_gru(pho_embeddings)
@@ -125,11 +127,15 @@ class Pinyin2(object):
         pinyins = list(map(self.get_pinyin, chars)) # 对每个字进行 pinyin化 ，如果是非char（pad等），返回U。如果是一个字，返回pinyin。
         pinyin_ids = [list(map(self.pho_vocab.get, pinyin)) for pinyin in pinyins]# 把 拼音字母转化成，ids
         pinyin_lens = [len(pinyin) for pinyin in pinyins] # 每个char 的拼音的长度
-        pinyin_ids = torch.nn.utils.rnn.pad_sequence(
-            [torch.tensor(x) for x in pinyin_ids],
-            batch_first=True,
-            padding_value=0,
-        )
+        try:
+            pinyin_ids = torch.nn.utils.rnn.pad_sequence(
+                [torch.tensor(x) for x in pinyin_ids],
+                batch_first=True,
+                padding_value=0,
+            )
+        except Exception as e:
+            # print('phoneme-encoder:')
+            print(e)
         '''
             Example:
         >>> from torch.nn.utils.rnn import pad_sequence
@@ -150,9 +156,10 @@ class Phoneme2(object):
         pho_vocab += ['\'']
         pho_vocab += ['.']
         pho_vocab += ['#'] # 表示为空
+        pho_vocab += ['^'] # 表示为word内的phoneme的空
         pho_vocab += ['*'] # <s> 表示开始
         pho_vocab += ['**'] # <s> 表示结束
-        assert len(pho_vocab) == 37
+        assert len(pho_vocab) == 38
         self.pho_vocab_size = len(pho_vocab)
         self.pho_vocab = {c: idx for idx, c in enumerate(pho_vocab)}
 
@@ -168,7 +175,7 @@ class Phoneme2(object):
         if c == '<pad>':
             return '#'
         s = g2p(c)
-        str_split = ' ' #一个单词内的几部分音素内容，用空格分割开来。 
+        str_split = '^' #一个单词内的几部分音素内容，用空格分割开来。 
         s = str_split.join(s)
         assert isinstance(s, str)
         return s
@@ -195,13 +202,15 @@ class Phoneme2(object):
             pinyin_list = [torch.tensor(x) for x in pinyin_ids]  
         except Exception as e:
             print(e)
-
-            
-        pinyin_ids_pad = torch.nn.utils.rnn.pad_sequence(
-            pinyin_list,
-            batch_first=True,
-            padding_value=0,
-        )
+        
+        try: 
+            pinyin_ids_pad = torch.nn.utils.rnn.pad_sequence(
+                pinyin_list,
+                batch_first=True,
+                padding_value=0,
+            )
+        except Exception as e:
+            print(e)
         '''
             Example:
         >>> from torch.nn.utils.rnn import pad_sequence

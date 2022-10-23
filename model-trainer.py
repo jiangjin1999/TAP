@@ -54,11 +54,11 @@ class Config(Tap):
 
     # 需修改参数配置
     mode: str = 'train'    
-    is_use_DDP = True
+    is_use_DDP = False
 
-    current_dataset: str = 'LIBRISPEECH_CLEAN'#'LIBRISPEECH'#'LIBRISPEECH_CLEAN_100'#'AIDATATANG' #['AISHELL-1', 'AIDATATANG', 'thchs'][0]
+    current_dataset: str = 'LIBRISPEECH_CLEAN'#'LIBRISPEECH_CLEAN'#'LIBRISPEECH'#'LIBRISPEECH_CLEAN_100'#'AIDATATANG' #['AISHELL-1', 'AIDATATANG', 'thchs'][0]
     is_pretrained: bool = True
-    is_phoneme: bool = False
+    is_phoneme: bool = True
     is_audio: bool = False
 
     #!!! 记得改 优化器的参数设置
@@ -490,9 +490,30 @@ class Trainer:
             pho_idx, pho_lens = pinyin_convertor.convert(chars)
         else:
             # logger.info('language is en: using phoneme convertor')
-            src_idx = label_features['input_ids'].flatten().tolist()
-            tokens = self.text_tokenizer.convert_ids_to_tokens(src_idx)
-            chars = [self.text_tokenizer.convert_tokens_to_string(token).replace(' ','') for token in tokens]
+            # src_idx = label_features['input_ids'].flatten().tolist()
+            # tokens = self.text_tokenizer.convert_ids_to_tokens(src_idx)
+            # chars = [self.text_tokenizer.convert_tokens_to_string(token).replace(' ','') for token in tokens]
+
+            # chars = [item.split(' ') for item in labels]
+            # 手动处理当前batch
+            processed_labels = ['<s> '+label[:-1]+' . </s>' for label in labels ]
+            splited_labels = [label.split(' ') for label in processed_labels]
+            final_labels = []
+            length = self.config.max_seq_length
+            for item in splited_labels:
+                if len(item)<length:
+                    tmp = ['<pad>' for i in range(length-len(item))]
+                    # final_labels.append(item+tmp)
+                    final_labels = final_labels + item+tmp
+                    assert len(item+tmp)==length
+                elif len(item)>length:
+                    assert len(item[0:length])==length
+                    # final_labels.append(item[0:length])
+                    final_labels = final_labels + item[0:length]
+                else:
+                    final_labels = final_labels + item
+                    # final_labels.append(item)
+            chars = final_labels
             pho_idx, pho_lens = phoneme_convertor.convert(chars)
         return encoded_features['input_ids'], label_features['input_ids'], pho_idx, pho_lens
 
