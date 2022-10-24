@@ -3,6 +3,7 @@ pretrained-T-model
 pretrained-TP-model
 pretrained-TA-model
 pretrained-TAP-model
+pretrained-jointly-TP-model
 pretrained-model
 data
 other-audio_feature

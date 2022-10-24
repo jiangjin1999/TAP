@@ -40,7 +40,8 @@ from utils import CustomSchedule, EarlyStopping, Similarity
 
 # from model.models import (BartForConditionalGeneration, )
 
-# os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+# os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+# torch.autograd.set_detect_anomaly(True) 
 
 
 
@@ -54,12 +55,12 @@ class Config(Tap):
 
     # 需修改参数配置
     mode: str = 'train'    
-    is_use_DDP = False
+    is_use_DDP = True
 
-    current_dataset: str = 'LIBRISPEECH_CLEAN'#'LIBRISPEECH_CLEAN'#'LIBRISPEECH'#'LIBRISPEECH_CLEAN_100'#'AIDATATANG' #['AISHELL-1', 'AIDATATANG', 'thchs'][0]
+    current_dataset: str = 'AISHELL-1'#'LIBRISPEECH_OTHER'#'LIBRISPEECH'#'LIBRISPEECH_CLEAN_100'#'AIDATATANG' #['AISHELL-1', 'AIDATATANG', 'thchs'][0]
     is_pretrained: bool = True
     is_phoneme: bool = True
-    is_audio: bool = False
+    is_audio: bool = True
 
     #!!! 记得改 优化器的参数设置
 
@@ -68,11 +69,11 @@ class Config(Tap):
     lambda_CL_TA = 1
     lambda_CL_AP = 0.5
     lambda_CL_PT = 0.5
-    lambda_CL = 0.1
+    lambda_CL = 1
     
     # is_multi_task_parameters: bool = True
 
-    batch_size: int = 20
+    batch_size: int = 50
     # LIBRISPEECH_CLEAN_100: 25
         # T:50
 
@@ -96,7 +97,10 @@ class Config(Tap):
         model_type = 'pretrained-'
     if is_phoneme is True and is_audio is True:
         if is_jointly_train is True:
-            model_type = model_type + 'jointly-TAP-model'
+            if is_CL_train is True:
+                model_type = model_type + 'CL_jointly-TAP-model'
+            else:
+                model_type = model_type + 'jointly-TAP-model'
         else:
             model_type = model_type + 'TAP-model'
     elif is_phoneme is True:
@@ -690,7 +694,7 @@ class Trainer:
                     self.config.get_device())
         pho_lens = torch.tensor(pho_lens).to(self.config.get_device())
         # pdb.set_trace()
-        # self.optimizer.zero_grad() # 这里累加 文本和phoneme的梯度。
+        self.optimizer.zero_grad() # 这里累加 文本和phoneme的梯度。
         # input_shape = input_ids.size()
         self.phoneme_encoder.train()
         
@@ -705,7 +709,7 @@ class Trainer:
             self.context_data.phoneme_encoder_embedding = output.encoder_last_hidden_state[:,0]
         
         self.context_data.phoneme_loss = output.loss.sum().detach().cpu().numpy().item()
-        self.context_data.output_loss = output.loss* self.config.lambda_phoneme
+        self.context_data.output_loss = output.loss * self.config.lambda_phoneme
         self.context_data.output_loss.backward()
         # output.loss.sum().backward()
         self.optimizer.step()
@@ -713,7 +717,7 @@ class Trainer:
 
 
     def train_jointly(self,):
-        # self.optimizer.zero_grad()
+        self.optimizer.zero_grad()
         # self.context_data.total_loss.sum().backward() #calculate the gradient
         
         if self.config.is_CL_train is True:
@@ -738,16 +742,17 @@ class Trainer:
                 + self.config.lambda_CL_AP * AP_CL_loss \
                     + self.config.lambda_CL_PT * PT_CL_loss
             self.context_data.total_loss = self.context_data.total_loss + self.config.lambda_CL * self.context_data.CL_loss
-        else:
-            self.context_data.output_loss  = self.context_data.output_loss/self.context_data.output_loss * self.context_data.total_loss
+        
+        # self.context_data.output_loss  = self.context_data.output_loss /self.context_data.audio_loss * self.context_data.total_loss
+        # self.context_data.output_loss = torch.tensor(self.context_data.total_loss, requires_grad=True)
+        self.context_data.output_loss = self.context_data.total_loss.clone().detach().requires_grad_(True)
         self.context_data.output_loss.backward()
         self.optimizer.step()
         self.lr_scheduler.step()
 
     # def comput_CL_loss(self, Modal_I, Modal_II):
-        
+    
 
-        
 
 
     def evaluate(self, dataloader,):
