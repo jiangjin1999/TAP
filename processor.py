@@ -63,6 +63,9 @@ class TextDataProcessor(DataProcessor):
                 example = [TextInputExample(self.en_utt_process(item.strip().split('|')[0]), item.strip().split('|')[2], item.strip().split('|')[1]) for item in data]
             else:
                 example = [TextInputExample(item.strip().split(' ')[0], item.strip().split(' ')[2], item.strip().split(' ')[1]) for item in data]
+            # import random
+            # a = example
+            # example = random.shuffle(a)
             return example
             # return example[0:1000]
             
@@ -82,6 +85,8 @@ class TextDataProcessor(DataProcessor):
     def _load_dataset(self, mode: str = 'train.txt') -> Dataset:
         file = os.path.join(self.data_dir, mode)
         examples = self._read(file)
+        import random
+        random.shuffle(examples)
         indices = [i for i in range(len(examples))] 
         return Subset(examples, indices) 
 

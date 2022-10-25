@@ -64,16 +64,16 @@ class Config(Tap):
 
     #!!! 记得改 优化器的参数设置
 
-    is_jointly_train: bool = False
-    is_CL_train: bool = False # 是否使用对比学习loss训练。
+    is_jointly_train: bool = True
+    is_CL_train: bool = True # 是否使用对比学习loss训练。
     lambda_CL_TA = 1
-    lambda_CL_AP = 0.5
-    lambda_CL_PT = 0.5
+    lambda_CL_AP = 1
+    lambda_CL_PT = 1
     lambda_CL = 1
     
     # is_multi_task_parameters: bool = True
 
-    batch_size: int = 50
+    batch_size: int = 35
     # LIBRISPEECH_CLEAN_100: 25
         # T:50
 
@@ -619,7 +619,7 @@ class Trainer:
                 self.train_epoch_audio(audio_batch)
 
             # self.optimizer.zero_grad()    
-            self.context_data.total_loss = self.context_data.loss + self.context_data.audio_loss + self.context_data.phoneme_loss
+            self.context_data.total_loss = (self.context_data.loss + self.context_data.audio_loss + self.context_data.phoneme_loss)
 
             if self.config.is_jointly_train is True is True:
                 self.train_jointly()
@@ -744,8 +744,8 @@ class Trainer:
             self.context_data.total_loss = self.context_data.total_loss + self.config.lambda_CL * self.context_data.CL_loss
         
         # self.context_data.output_loss  = self.context_data.output_loss /self.context_data.audio_loss * self.context_data.total_loss
-        # self.context_data.output_loss = torch.tensor(self.context_data.total_loss, requires_grad=True)
-        self.context_data.output_loss = self.context_data.total_loss.clone().detach().requires_grad_(True)
+        self.context_data.output_loss = torch.tensor(self.context_data.total_loss, requires_grad=True)
+        # self.context_data.output_loss = self.context_data.total_loss.clone().detach().requires_grad_(True)
         self.context_data.output_loss.backward()
         self.optimizer.step()
         self.lr_scheduler.step()
