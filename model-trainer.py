@@ -40,7 +40,7 @@ from utils import CustomSchedule, EarlyStopping, Similarity
 
 # from model.models import (BartForConditionalGeneration, )
 
-# os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+# os.environ["CUDA_VISIBLE_DEVICES"] = "3"
 # torch.autograd.set_detect_anomaly(True) 
 
 
@@ -98,7 +98,7 @@ class Config(Tap):
     if is_phoneme is True and is_audio is True:
         if is_jointly_train is True:
             if is_CL_train is True:
-                model_type = model_type + 'CL_jointly-TAP-model'
+                model_type = model_type + 'CL_jointly-TAP-model_limited'
             else:
                 model_type = model_type + 'jointly-TAP-model'
         else:
@@ -593,6 +593,11 @@ class Trainer:
             scalar_value=self.context_data.total_loss,
             global_step=self.context_data.train_step,
         )
+        self.writer.add_scalar(
+            'train/CL-loss',
+            scalar_value=self.context_data.CL_loss,
+            global_step=self.context_data.train_step,
+        )
 
     def train_epoch(self):
         """handle the logit of training epoch
@@ -619,9 +624,9 @@ class Trainer:
                 self.train_epoch_audio(audio_batch)
 
             # self.optimizer.zero_grad()    
-            self.context_data.total_loss = (self.context_data.loss + self.context_data.audio_loss + self.context_data.phoneme_loss)
+            self.context_data.total_loss = (self.context_data.loss + self.context_data.audio_loss + self.context_data.phoneme_loss) * 0
 
-            if self.config.is_jointly_train is True is True:
+            if self.config.is_jointly_train is True & self.context_data.epoch<5:
                 self.train_jointly()
 
             if self.config.early_stop_flag:
@@ -748,7 +753,7 @@ class Trainer:
         # self.context_data.output_loss = self.context_data.total_loss.clone().detach().requires_grad_(True)
         self.context_data.output_loss.backward()
         self.optimizer.step()
-        self.lr_scheduler.step()
+        # self.lr_scheduler.step()
 
     # def comput_CL_loss(self, Modal_I, Modal_II):
     
