@@ -8,6 +8,7 @@ from boto import config
 from torch.utils.data import Dataset, Subset, DataLoader
 import pandas as pd
 from dataclasses import dataclass
+from transformers import set_seed
 
 from wandb import Config
 
@@ -54,6 +55,7 @@ class TextDataProcessor(DataProcessor):
         super().__init__()
         self.data_dir = data_dir
         self.dataset = config.current_dataset
+        self.seed = config.seed
     
     def _read(self, file: str) -> List[TextInputExample]:
         with open(file, 'r', encoding='utf-8') as f:
@@ -85,8 +87,10 @@ class TextDataProcessor(DataProcessor):
     def _load_dataset(self, mode: str = 'train.txt') -> Dataset:
         file = os.path.join(self.data_dir, mode)
         examples = self._read(file)
-        import random
-        random.shuffle(examples)
+        #
+        # import random
+        # set_seed(self.seed)
+        # random.shuffle(examples)
         indices = [i for i in range(len(examples))] 
         return Subset(examples, indices) 
 

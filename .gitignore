@@ -6,7 +6,10 @@ pretrained-TAP-model
 pretrained-jointly-TP-model
 pretrained-CL_jointly-TAP-model
 pretrained-CL_jointly-TAP-model_limited
+no-ddp_pretrained-T-model
+dp_pretrained-T-model
 result_analysis
+pretrained-model
 pretrained-model
 data
 other-audio_feature
