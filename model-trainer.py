@@ -58,7 +58,7 @@ class Config(Tap):
 
     # 需修改参数配置
     mode: str = 'train'    
-    is_use_DDP = True
+    is_use_DDP = False
     is_use_DP = False
 
     current_dataset: str = 'AIDATATANG'#'LIBRISPEECH_OTHER'#'LIBRISPEECH'#'LIBRISPEECH_CLEAN_100'#'AIDATATANG' #['AISHELL-1', 'AIDATATANG', 'thchs'][0]
@@ -923,7 +923,8 @@ class Trainer:
         self.on_train_start()
         for _ in range(self.config.epochs):            
             self.context_data.epoch += 1
-            self.config.sampler.set_epoch(self.context_data.epoch)
+            if self.config.is_use_DDP is True:
+                self.config.sampler.set_epoch(self.context_data.epoch)
             self.train_epoch()
 
             self.on_epoch_end()
@@ -1100,20 +1101,69 @@ def set_my_seed(seed):
     from torch.backends import cudnn
     cudnn.benchmark = False
     cudnn.deterministic = True
+    
+def reset_config_parse(config):
+    # 讲 config 中所有 由 if修改的变量 和 由其他变量定义的变量 在该函数内重新定义。
+    if config.is_pretrained is True:
+        config.model_type = 'pretrained-'
+    if config.is_phoneme is True and config.is_audio is True:
+        if config.is_jointly_train is True:
+            if config.is_CL_train is True:
+                if config.is_limited_CL_train is True:
+                    config.model_type = config.model_type + 'CL_jointly-TAP-model_limited'
+                else:
+                     config.model_type = config.model_type + 'CL_jointly-TAP-model'
+            else:
+                config.model_type = config.model_type + 'jointly-TAP-model'
+        else:
+            config.model_type = config.model_type + 'TAP-model'
+    elif config.is_phoneme is True:
+        if config.is_jointly_train is True:
+            config.model_type = config.model_type + 'jointly-TP-model'
+        else:
+            config.model_type = config.model_type + 'TP-model'
+    elif config.is_audio is True:
+        if config.is_jointly_train is True:
+            config.model_type = config.model_type + 'jointly-TA-model'
+        else:
+            config.model_type = config.model_type + 'TA-model'
+    else: 
+        config.model_type = config.model_type + 'T-model'
 
+    if config.is_use_DP == True:
+        config.model_type = 'dp_' + config.model_type
+
+    config.mode_mode_path: str = config.pwd + config.model_type
+    config.mode_mode_path_dataset: str = config.mode_mode_path + '/' + config.current_dataset
+    
+    config.best_model_dir: str = config.mode_mode_path_dataset + '/model-checkpoint/'
+    config.test_result_dir: str = config.mode_mode_path_dataset + '/result/'
+    config.log_path: str = config.mode_mode_path_dataset + '/log/'
+    config.tensorboard_path: str = config.mode_mode_path_dataset + '/tensorboard/' 
+
+    if config.current_dataset in ['AISHELL-1', 'AIDATATANG', 'thchs']:
+        config.is_zh = True
+        config.language = 'zh'
+
+    config.text_data_dir: str = config.pwd +'data/'+ config.language 
+    
+    config.audio_feature_path: str = config.text_data_dir +'/' + config.current_dataset +'/audio-feature/wav2vec_feature.h5'
+
+    config.pretrained_model: str = config.pwd + 'pretrained-model/'+ config.language+'/BART'
+    config.phoneme_model_path: str = config.pwd + 'pretrained-model/'+ config.language+'/phoneme_model'
+
+    if config.language == 'en':
+        config.max_seq_length: int = 100
+
+    if config.language == 'en':
+        config.audio_encoder_input_dim = 768
+
+    if config.language == 'en': config.metric = 'wer'
 
 
 if __name__ == "__main__":
-
-
+    
     config: Config = Config().parse_args(known_only=True)
-
-    set_my_seed(config.seed)
-    if os.path.exists(config.mode_mode_path_dataset):
-        pass
-    else:
-        os.makedirs(config.mode_mode_path_dataset)
-        
 
     if config.is_use_DDP is True:
         # 新增1:依赖
@@ -1133,6 +1183,15 @@ if __name__ == "__main__":
         # 新增：DDP backend初始化
         torch.cuda.set_device('cuda:'+str(local_rank))
         dist.init_process_group(backend='nccl')  # nccl是GPU设备上最快、最推荐的后端
+        
+    print(config.current_dataset)
+    reset_config_parse(config)
+    
+    set_my_seed(config.seed)
+    if os.path.exists(config.mode_mode_path_dataset):
+        pass
+    else:
+        os.makedirs(config.mode_mode_path_dataset)
         
     if config.is_pretrained==True:
         MODEL_TYPE = AutoModelForSeq2SeqLM.from_pretrained(config.pretrained_model)
