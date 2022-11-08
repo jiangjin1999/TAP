@@ -11,13 +11,18 @@ dp_pretrained-T-model
 result_analysis
 pretrained-model
 pretrained-model
-data
+
+data/zh/AIDATATANG/audio-feature
+data/zh/AISHELL-1
+data/zh/MAGICDATA
+data/en/
+
 other-audio_feature
 pretrained-model/zh/phoneme_model/*.bin
 pretrained-model/en/BART/*.bin
 pretrained-model/zh/BART/*.bin
 
-data/zh/AIDATATANG
+# data/zh/AIDATATANG
 data/zh/MAGICDATA
 bash_trainer.sh
 
