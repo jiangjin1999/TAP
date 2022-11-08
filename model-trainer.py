@@ -58,13 +58,13 @@ class Config(Tap):
 
     # 需修改参数配置
     mode: str = 'train'    
-    is_use_DDP = False
-    is_use_DP = False
+    is_use_DDP:bool = False
+    
 
     current_dataset: str = 'AIDATATANG'#'LIBRISPEECH_OTHER'#'LIBRISPEECH'#'LIBRISPEECH_CLEAN_100'#'AIDATATANG' #['AISHELL-1', 'AIDATATANG', 'thchs'][0]
     is_pretrained: bool = True
     is_phoneme: bool = False
-    is_audio: bool = True
+    is_audio: bool = False
 
     #!!! 记得改 优化器的参数设置
 
@@ -79,7 +79,7 @@ class Config(Tap):
     
     # is_multi_task_parameters: bool = True
 
-    batch_size: int = 50
+    batch_size: int = 10
     # LIBRISPEECH_CLEAN_100: 25
         # T:50
 
@@ -125,10 +125,6 @@ class Config(Tap):
     else: 
         model_type = model_type + 'T-model'
         
-    # if is_use_DDP != True:
-    #     model_type = 'no-ddp_' + model_type
-    if is_use_DP == True:
-        model_type = 'dp_' + model_type
 
     mode_mode_path: str = pwd + model_type
     mode_mode_path_dataset: str = mode_mode_path + '/' + current_dataset
@@ -210,10 +206,13 @@ class ContextContainer:
         self.best_dev_cer: float = 1000
         self.test_cer: float = 1000
 
+        self.lr:float = 0
+
         self.loss = 0
         self.audio_loss = 0
         self.phoneme_loss = 0
         self.total_loss = 0
+        self.total_loss_CL = 0
         self.CL_loss = 0 # 三个对比学习loss的求和
         self.text_encoder_embedding = 0
         self.audio_encoder_embedding = 0
@@ -249,23 +248,17 @@ class Trainer:
         model.resize_token_embeddings(len(text_tokenizer))
 
         if self.config.is_use_DDP is True:
+            model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
             model = model.to(self.config.get_device())
             self.model = DDP(model, device_ids=[int(self.config.local_rank)], output_device=[int(self.config.local_rank)], find_unused_parameters=False)
             if self.config.is_audio is True:
+                audio_encoder = torch.nn.SyncBatchNorm.convert_sync_batchnorm(audio_encoder)
                 audio_encoder = audio_encoder.to(self.config.get_device())
                 self.audio_encoder = DDP(audio_encoder, device_ids=[int(self.config.local_rank)], output_device=[int(self.config.local_rank)], find_unused_parameters=False)
             if self.config.is_phoneme is True:
+                phoneme_encoder = torch.nn.SyncBatchNorm.convert_sync_batchnorm(phoneme_encoder)
                 phoneme_encoder = phoneme_encoder.to(self.config.get_device())
                 self.phoneme_encoder = DDP(phoneme_encoder, device_ids=[int(self.config.local_rank)], output_device=[int(self.config.local_rank)], find_unused_parameters=True)
-        elif self.config.is_use_DP is True:
-            model = nn.DataParallel(model)
-            self.model = model.to(self.config.get_device())
-            if self.config.is_audio is True:
-                audio_encoder = nn.DataParallel(audio_encoder)
-                self.audio_encoder = audio_encoder.to(self.config.get_device())
-            if self.config.is_phoneme is True:
-                phoneme_encoder = nn.DataParallel(phoneme_encoder)
-                self.phoneme_encoder = phoneme_encoder.to(self.config.get_device())
         else:
             self.model = model.to(self.config.get_device())
             if self.config.is_audio is True:
@@ -431,7 +424,8 @@ class Trainer:
 
         self.optimizer = torch.optim.AdamW(optimizer_grouped_parameters, lr=config.learning_rate)
         
-        self.config.max_train_steps = len(self.train_dataloader) * self.config.epochs / 4 
+        # 最大的step就是 train_dataloader 的 长度 乘上 epochs的长度。
+        self.config.max_train_steps = len(self.train_dataloader) * self.config.epochs 
         # self.config.num_warmup_steps = self.config.max_train_steps * 0.1
         self.lr_scheduler = get_scheduler(
             name=config.lr_scheduler_type,
@@ -623,6 +617,17 @@ class Trainer:
             scalar_value=self.context_data.CL_loss,
             global_step=self.context_data.train_step,
         )
+        self.writer.add_scalar(
+            'train/total-loss_CL',
+            scalar_value=self.context_data.total_loss_CL,
+            global_step=self.context_data.train_step,
+        )
+        self.writer.add_scalar(
+            'train/learning-rate',
+            scalar_value=self.context_data.lr,
+            global_step=self.context_data.train_step,
+        )
+        
 
     def train_epoch(self):
         """handle the logit of training epoch
@@ -632,6 +637,7 @@ class Trainer:
         # """
         if self.config.local_rank=='0':
             logger.info('\n')
+            logger.info('=======================================')
             logger.info(f'training epoch<{self.context_data.epoch}> ...')
         self.train_bar = tqdm(total=len(self.train_dataloader))
 
@@ -639,6 +645,7 @@ class Trainer:
             
             self.on_batch_start()
             # pdb.set_trace()
+            self.context_data.lr = self.optimizer.defaults['lr']
 
             self.train_epoch_text(text_batch)
             
@@ -681,17 +688,12 @@ class Trainer:
         output: Seq2SeqLMOutput = self.model(
             input_ids=input_ids, labels=labels)
 
-
-
         if self.config.is_CL_train is True:
             self.context_data.text_encoder_embedding = output.encoder_last_hidden_state[:,0]
 
         self.context_data.loss = output.loss.sum().detach().cpu().numpy().item()
         self.context_data.output_loss = output.loss * self.config.lambda_text
-        if self.config.is_use_DP is True:
-            self.context_data.output_loss.backward(torch.ones(self.context_data.output_loss.shape).to("cuda:0"))
-        else:
-            self.context_data.output_loss.backward()
+        self.context_data.output_loss.backward()
         
 
 
@@ -727,15 +729,8 @@ class Trainer:
         self.context_data.output_loss = output.loss * self.config.lambda_audio
         if self.config.is_jointly_train is True:
             self.context_data.output_loss.backward(retain_graph=True)
-            if self.config.is_use_DP is True:
-                self.context_data.output_loss.backward(retain_graph=True)#torch.ones(self.context_data.output_loss.shape).to("cuda:0"))
-            else:
-                self.context_data.output_loss.backward(retain_graph=True)
         else:
-            if self.config.is_use_DP is True:
-                self.context_data.output_loss.backward(torch.ones(self.context_data.output_loss.shape).to("cuda:0"))
-            else:
-                self.context_data.output_loss.backward()
+            self.context_data.output_loss.backward()
         # output.loss.sum().backward()
         self.optimizer.step()
         # self.lr_scheduler.step()        
@@ -765,10 +760,7 @@ class Trainer:
         
         self.context_data.phoneme_loss = output.loss.sum().detach().cpu().numpy().item()
         self.context_data.output_loss = output.loss * self.config.lambda_phoneme
-        if self.config.is_use_DP is True:
-            self.context_data.output_loss.backward(torch.ones(self.context_data.output_loss.shape).to("cuda:0"))
-        else:
-            self.context_data.output_loss.backward()
+        self.context_data.output_loss.backward()
         # output.loss.sum().backward()
         self.optimizer.step()
         self.lr_scheduler.step()
@@ -799,19 +791,16 @@ class Trainer:
             self.context_data.CL_loss =  self.config.lambda_CL_TA * TA_CL_loss \
                 + self.config.lambda_CL_AP * AP_CL_loss \
                     + self.config.lambda_CL_PT * PT_CL_loss
-            self.context_data.total_loss = self.context_data.total_loss + self.config.lambda_CL * self.context_data.CL_loss
+            self.context_data.total_loss_CL = self.context_data.total_loss + self.config.lambda_CL * self.context_data.CL_loss
         
         # self.context_data.output_loss  = self.context_data.output_loss /self.context_data.audio_loss * self.context_data.total_loss
-        self.context_data.output_loss = torch.tensor(self.context_data.total_loss, requires_grad=True)
+        self.context_data.output_loss = torch.tensor(self.context_data.total_loss_CL, requires_grad=True)
         # self.context_data.output_loss = self.context_data.total_loss.clone().detach().requires_grad_(True)
-        if self.config.is_use_DP is True:
-            self.context_data.output_loss.backward(torch.ones(self.context_data.output_loss.shape).to("cuda:0"))
-        else:
-            self.context_data.output_loss.backward()
+
+        self.context_data.output_loss.backward()
         self.optimizer.step()
         # self.lr_scheduler.step()
 
-    # def comput_CL_loss(self, Modal_I, Modal_II):
     
 
 
@@ -972,6 +961,7 @@ class Trainer:
         # self.load_model(self.config.best_model_dir)
         dataloader = self.test_dataloader
         if self.config.local_rank=='0':
+            logger.info('\n')
             logger.info('start predicting ...')
         if FLAG is not None:
             pass
@@ -1000,10 +990,6 @@ class Trainer:
             #     generated_tokens = generated_tokens.detach().cpu().numpy()
             #     labels = labels.detach().cpu().numpy()  
                 if self.config.is_use_DDP is True:
-                    max_token = input_ids.shape[1]
-                    generated_tokens: Seq2SeqLMOutput = self.model.module.generate(
-                        input_ids=input_ids, max_length=max_token)
-                elif self.config.is_use_DP is True:
                     max_token = input_ids.shape[1]
                     generated_tokens: Seq2SeqLMOutput = self.model.module.generate(
                         input_ids=input_ids, max_length=max_token)
@@ -1068,7 +1054,9 @@ class Trainer:
             if FLAG is not None:
                 pass
             else:
+                logger.info('\n')
                 logger.info(f'raw/cer is {raw_score}')
+            logger.info('\n')
             logger.info(f'test/cer is {self.context_data.test_cer}')
         # add test cer every time evaluate test data
         self.model.train()
@@ -1130,9 +1118,6 @@ def reset_config_parse(config):
     else: 
         config.model_type = config.model_type + 'T-model'
 
-    if config.is_use_DP == True:
-        config.model_type = 'dp_' + config.model_type
-
     config.mode_mode_path: str = config.pwd + config.model_type
     config.mode_mode_path_dataset: str = config.mode_mode_path + '/' + config.current_dataset
     
@@ -1163,7 +1148,9 @@ def reset_config_parse(config):
 
 if __name__ == "__main__":
     
-    config: Config = Config().parse_args(known_only=True)
+    config: Config = Config().parse_args()
+    
+    reset_config_parse(config)
 
     if config.is_use_DDP is True:
         # 新增1:依赖
@@ -1184,8 +1171,11 @@ if __name__ == "__main__":
         torch.cuda.set_device('cuda:'+str(local_rank))
         dist.init_process_group(backend='nccl')  # nccl是GPU设备上最快、最推荐的后端
         
-    print(config.current_dataset)
-    reset_config_parse(config)
+    # print(config.current_dataset)
+    # print(config.is_jointly_train)
+    
+
+    
     
     set_my_seed(config.seed)
     if os.path.exists(config.mode_mode_path_dataset):
