@@ -111,12 +111,18 @@ class Config(Tap):
             model_type = model_type + 'TAP-model'
     elif is_phoneme is True:
         if is_jointly_train is True:
-            model_type = model_type + 'jointly-TP-model'
+            if is_CL_train is True:
+                model_type = model_type + 'CL_jointly-TP-model'
+            else:
+                model_type = model_type + 'jointly-TP-model'
         else:
             model_type = model_type + 'TP-model'
     elif is_audio is True:
         if is_jointly_train is True:
-            model_type = model_type + 'jointly-TA-model'
+            if is_CL_train is True:
+                model_type = model_type + 'CL_jointly-TA-model'
+            else:
+                model_type = model_type + 'jointly-TA-model'
         else:
             model_type = model_type + 'TA-model'
     else: 
@@ -770,19 +776,23 @@ class Trainer:
         
         if self.config.is_CL_train is True:
             loss_fct = nn.CrossEntropyLoss()
+            TA_CL_loss = 0
+            AP_CL_loss = 0
+            PT_CL_loss = 0
             # 计算TA之间的CL loss
-            if 
-            cos_sim = self.config.sim(self.context_data.text_encoder_embedding.unsqueeze(1),\
-                self.context_data.audio_encoder_embedding.unsqueeze(0))
-            labels = torch.arange(cos_sim.size(0)).long().to(self.config.get_device())
-            TA_CL_loss = loss_fct(cos_sim, labels)
+            if self.config.is_audio is True:
+                cos_sim = self.config.sim(self.context_data.text_encoder_embedding.unsqueeze(1),\
+                    self.context_data.audio_encoder_embedding.unsqueeze(0))
+                labels = torch.arange(cos_sim.size(0)).long().to(self.config.get_device())
+                TA_CL_loss = loss_fct(cos_sim, labels)
             # 计算AP之间的CL loss
-            cos_sim = self.config.sim(self.context_data.audio_encoder_embedding.unsqueeze(1),\
-                self.context_data.phoneme_encoder_embedding.unsqueeze(0))
-            labels = torch.arange(cos_sim.size(0)).long().to(self.config.get_device())
-            AP_CL_loss = loss_fct(cos_sim, labels)
+            if self.config.is_phoneme is True and self.config.is_audio is True:
+                cos_sim = self.config.sim(self.context_data.audio_encoder_embedding.unsqueeze(1),\
+                    self.context_data.phoneme_encoder_embedding.unsqueeze(0))
+                labels = torch.arange(cos_sim.size(0)).long().to(self.config.get_device())
+                AP_CL_loss = loss_fct(cos_sim, labels)
             # 计算PT之间的CL loss
-            cos_sim = self.config.sim(self.context_data.audio_encoder_embedding.unsqueeze(1),\
+            cos_sim = self.config.sim(self.context_data.phoneme_encoder_embedding.unsqueeze(1),\
                 self.context_data.text_encoder_embedding.unsqueeze(0))
             labels = torch.arange(cos_sim.size(0)).long().to(self.config.get_device())
             PT_CL_loss = loss_fct(cos_sim, labels)
@@ -1101,19 +1111,25 @@ def reset_config_parse(config):
                 if config.is_limited_CL_train is True:
                     config.model_type = config.model_type + 'CL_jointly-TAP-model_limited'
                 else:
-                     config.model_type = config.model_type + 'CL_jointly-TAP-model'
+                    config.model_type = config.model_type + 'CL_jointly-TAP-model'
             else:
                 config.model_type = config.model_type + 'jointly-TAP-model'
         else:
             config.model_type = config.model_type + 'TAP-model'
     elif config.is_phoneme is True:
         if config.is_jointly_train is True:
-            config.model_type = config.model_type + 'jointly-TP-model'
+            if config.is_CL_train is True:
+                config.model_type = config.model_type + 'CL_jointly-TP-model'
+            else:
+                config.model_type = config.model_type + 'jointly-TP-model'
         else:
             config.model_type = config.model_type + 'TP-model'
     elif config.is_audio is True:
         if config.is_jointly_train is True:
-            config.model_type = config.model_type + 'jointly-TA-model'
+            if config.is_CL_train is True:
+                config.model_type = config.model_type + 'CL_jointly-TA-model'
+            else:
+                config.model_type = config.model_type + 'jointly-TA-model'
         else:
             config.model_type = config.model_type + 'TA-model'
     else: 
