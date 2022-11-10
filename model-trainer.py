@@ -13,12 +13,9 @@ import torch
 # import torchaudio
 # from MeCab import Model
 from datasets import Metric, load_metric
-# import evaluate
+import evaluate
 from genericpath import exists
 from loguru import logger
-from sklearn.feature_selection import SelectFdr
-from sqlalchemy import false
-from sympy import true
 from tap import Tap
 from torch import nn, tensor
 from torch.optim import AdamW
@@ -54,7 +51,7 @@ class Config(Tap):
     # 如果想通过 .sh 传参数，就必须在代码中，重新进行这一步。
     seed: int = 2022
 
-    pwd: str = '/home/users/jiangjin/jiangjin_bupt/ASR_CORRECTION/Cross_modal/TAP/'#'/home/jiangjin/ASR_CORRECTION/TAP/'
+    pwd: str = '/root/significant-code/TAP/'#'/home/jiangjin/ASR_CORRECTION/TAP/'
 
     # 需修改参数配置
     mode: str = 'train'    
@@ -1178,10 +1175,10 @@ if __name__ == "__main__":
     
     
     set_my_seed(config.seed)
-    if os.path.exists(config.mode_mode_path_dataset):
-        pass
-    else:
-        os.makedirs(config.mode_mode_path_dataset)
+    # if os.path.exists(config.mode_mode_path_dataset):
+    #     pass
+    # else:
+    #     os.makedirs(config.mode_mode_path_dataset)
         
     if config.is_pretrained==True:
         MODEL_TYPE = AutoModelForSeq2SeqLM.from_pretrained(config.pretrained_model)
@@ -1213,7 +1210,7 @@ if __name__ == "__main__":
         model=MODEL_TYPE,
         phoneme_encoder=Phoneme_encoder,
         audio_encoder=Audio_encoder,
-        metric=load_metric(config.metric)
+        metric=evaluate.load(config.metric)
     )
     if config.mode == 'train':
         logger.add(os.path.join(config.log_path, 'train.'+config.current_dataset+'.T-model-log.txt'))
