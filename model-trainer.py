@@ -63,14 +63,14 @@ class Config(Tap):
 
     current_dataset: str = 'AIDATATANG'#'LIBRISPEECH_OTHER'#'LIBRISPEECH'#'LIBRISPEECH_CLEAN_100'#'AIDATATANG' #['AISHELL-1', 'AIDATATANG', 'thchs'][0]
     is_pretrained: bool = True
-    is_phoneme: bool = True #False
-    is_audio: bool = True #False
+    is_phoneme: bool = False #False
+    is_audio: bool = False #False
 
     #!!! 记得改 优化器的参数设置
 
-    is_jointly_train: bool = True #False
-    is_CL_train: bool = True #False # 是否使用对比学习loss训练。
-    is_limited_CL_train: bool = True #False
+    is_jointly_train: bool = False #False
+    is_CL_train: bool = False #False # 是否使用对比学习loss训练。
+    is_limited_CL_train: bool = False #False
     
     lambda_CL_TA = 1
     lambda_CL_AP = 1
@@ -773,16 +773,21 @@ class Trainer:
         
         if self.config.is_CL_train is True:
             loss_fct = nn.CrossEntropyLoss()
+            TA_CL_loss = 0
+            AP_CL_loss = 0
+            PT_CL_loss = 0
             # 计算TA之间的CL loss
-            cos_sim = self.config.sim(self.context_data.text_encoder_embedding.unsqueeze(1),\
-                self.context_data.audio_encoder_embedding.unsqueeze(0))
-            labels = torch.arange(cos_sim.size(0)).long().to(self.config.get_device())
-            TA_CL_loss = loss_fct(cos_sim, labels)
+            if self.config.is_audio is True:
+                cos_sim = self.config.sim(self.context_data.text_encoder_embedding.unsqueeze(1),\
+                    self.context_data.audio_encoder_embedding.unsqueeze(0))
+                labels = torch.arange(cos_sim.size(0)).long().to(self.config.get_device())
+                TA_CL_loss = loss_fct(cos_sim, labels)
             # 计算AP之间的CL loss
-            cos_sim = self.config.sim(self.context_data.audio_encoder_embedding.unsqueeze(1),\
-                self.context_data.phoneme_encoder_embedding.unsqueeze(0))
-            labels = torch.arange(cos_sim.size(0)).long().to(self.config.get_device())
-            AP_CL_loss = loss_fct(cos_sim, labels)
+            if self.config.is_phoneme is True:
+                cos_sim = self.config.sim(self.context_data.audio_encoder_embedding.unsqueeze(1),\
+                    self.context_data.phoneme_encoder_embedding.unsqueeze(0))
+                labels = torch.arange(cos_sim.size(0)).long().to(self.config.get_device())
+                AP_CL_loss = loss_fct(cos_sim, labels)
             # 计算PT之间的CL loss
             cos_sim = self.config.sim(self.context_data.audio_encoder_embedding.unsqueeze(1),\
                 self.context_data.text_encoder_embedding.unsqueeze(0))
