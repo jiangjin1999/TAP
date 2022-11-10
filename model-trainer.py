@@ -63,14 +63,14 @@ class Config(Tap):
 
     current_dataset: str = 'AIDATATANG'#'LIBRISPEECH_OTHER'#'LIBRISPEECH'#'LIBRISPEECH_CLEAN_100'#'AIDATATANG' #['AISHELL-1', 'AIDATATANG', 'thchs'][0]
     is_pretrained: bool = True
-    is_phoneme: bool = False
-    is_audio: bool = False
+    is_phoneme: bool = True #False
+    is_audio: bool = True #False
 
     #!!! 记得改 优化器的参数设置
 
-    is_jointly_train: bool = False
-    is_CL_train: bool = False # 是否使用对比学习loss训练。
-    is_limited_CL_train: bool = False
+    is_jointly_train: bool = True #False
+    is_CL_train: bool = True #False # 是否使用对比学习loss训练。
+    is_limited_CL_train: bool = True #False
     
     lambda_CL_TA = 1
     lambda_CL_AP = 1
@@ -645,7 +645,7 @@ class Trainer:
             
             self.on_batch_start()
             # pdb.set_trace()
-            self.context_data.lr = self.optimizer.defaults['lr']
+            self.context_data.lr = self.optimizer.param_groups[0]['lr']
 
             self.train_epoch_text(text_batch)
             
@@ -656,11 +656,12 @@ class Trainer:
                 self.train_epoch_audio(audio_batch)
 
             # self.optimizer.zero_grad()    
-            self.context_data.total_loss = (self.context_data.loss + self.context_data.audio_loss + self.context_data.phoneme_loss) * 0
+            self.context_data.total_loss = (self.context_data.loss + self.context_data.audio_loss + self.context_data.phoneme_loss)
 
             if self.config.is_limited_CL_train is True:
-                if self.config.is_jointly_train is True & self.context_data.epoch<5:
-                    self.train_jointly()
+                if self.config.is_jointly_train is True:
+                    if self.context_data.epoch<5:
+                        self.train_jointly()
             else:
                 if self.config.is_jointly_train is True:
                     self.train_jointly()
@@ -792,9 +793,11 @@ class Trainer:
                 + self.config.lambda_CL_AP * AP_CL_loss \
                     + self.config.lambda_CL_PT * PT_CL_loss
             self.context_data.total_loss_CL = self.context_data.total_loss + self.config.lambda_CL * self.context_data.CL_loss
+            self.context_data.output_loss = torch.tensor(self.context_data.total_loss_CL, requires_grad=True)
+        else:
+             self.context_data.output_loss = torch.tensor(self.context_data.total_loss, requires_grad=True)
         
-        # self.context_data.output_loss  = self.context_data.output_loss /self.context_data.audio_loss * self.context_data.total_loss
-        self.context_data.output_loss = torch.tensor(self.context_data.total_loss_CL, requires_grad=True)
+        # self.context_data.output_loss  = self.context_data.output_loss /self.context_data.audio_loss * self.context_data.total_loss     
         # self.context_data.output_loss = self.context_data.total_loss.clone().detach().requires_grad_(True)
 
         self.context_data.output_loss.backward()
@@ -1177,11 +1180,11 @@ if __name__ == "__main__":
 
     
     
-    set_my_seed(config.seed)
-    if os.path.exists(config.mode_mode_path_dataset):
-        pass
-    else:
-        os.makedirs(config.mode_mode_path_dataset)
+    # set_my_seed(config.seed)
+    # if os.path.exists(config.mode_mode_path_dataset):
+    #     pass
+    # else:
+    #     os.makedirs(config.mode_mode_path_dataset)
         
     if config.is_pretrained==True:
         MODEL_TYPE = AutoModelForSeq2SeqLM.from_pretrained(config.pretrained_model)
