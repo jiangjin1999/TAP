@@ -38,7 +38,7 @@ from utils import CustomSchedule, EarlyStopping, Similarity
 
 # from model.models import (BartForConditionalGeneration, )
 
-# os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+os.environ["CUDA_VISIBLE_DEVICES"] = "2"
 # os.environ["CUDA_VISIBLE_DEVICES"] = "1,2,3"
 # torch.autograd.set_detect_anomaly(True) 
 
@@ -61,13 +61,13 @@ class Config(Tap):
     current_dataset: str = 'AIDATATANG'#'LIBRISPEECH_OTHER'#'LIBRISPEECH'#'LIBRISPEECH_CLEAN_100'#'AIDATATANG' #['AISHELL-1', 'AIDATATANG', 'thchs'][0]
     is_pretrained: bool = True
     is_phoneme: bool = True #False
-    is_audio: bool = True #False
+    is_audio: bool = False #False
 
     #!!! 记得改 优化器的参数设置
 
     is_jointly_train: bool = True #False
     is_CL_train: bool = True #False # 是否使用对比学习loss训练。
-    is_limited_CL_train: bool = True #False
+    is_limited_CL_train: bool = False #False
     
     lambda_CL_TA = 1
     lambda_CL_AP = 1
@@ -771,6 +771,7 @@ class Trainer:
         if self.config.is_CL_train is True:
             loss_fct = nn.CrossEntropyLoss()
             # 计算TA之间的CL loss
+            if 
             cos_sim = self.config.sim(self.context_data.text_encoder_embedding.unsqueeze(1),\
                 self.context_data.audio_encoder_embedding.unsqueeze(0))
             labels = torch.arange(cos_sim.size(0)).long().to(self.config.get_device())
