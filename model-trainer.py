@@ -783,13 +783,13 @@ class Trainer:
                 labels = torch.arange(cos_sim.size(0)).long().to(self.config.get_device())
                 TA_CL_loss = loss_fct(cos_sim, labels)
             # 计算AP之间的CL loss
-            if self.config.is_phoneme is True:
+            if self.config.is_phoneme is True and self.config.is_audio is True:
                 cos_sim = self.config.sim(self.context_data.audio_encoder_embedding.unsqueeze(1),\
                     self.context_data.phoneme_encoder_embedding.unsqueeze(0))
                 labels = torch.arange(cos_sim.size(0)).long().to(self.config.get_device())
                 AP_CL_loss = loss_fct(cos_sim, labels)
             # 计算PT之间的CL loss
-            cos_sim = self.config.sim(self.context_data.audio_encoder_embedding.unsqueeze(1),\
+            cos_sim = self.config.sim(self.context_data.phoneme_encoder_embedding.unsqueeze(1),\
                 self.context_data.text_encoder_embedding.unsqueeze(0))
             labels = torch.arange(cos_sim.size(0)).long().to(self.config.get_device())
             PT_CL_loss = loss_fct(cos_sim, labels)
