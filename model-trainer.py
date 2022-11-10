@@ -13,9 +13,12 @@ import torch
 # import torchaudio
 # from MeCab import Model
 from datasets import Metric, load_metric
-import evaluate
+# import evaluate
 from genericpath import exists
 from loguru import logger
+from sklearn.feature_selection import SelectFdr
+from sqlalchemy import false
+from sympy import true
 from tap import Tap
 from torch import nn, tensor
 from torch.optim import AdamW
@@ -38,7 +41,7 @@ from utils import CustomSchedule, EarlyStopping, Similarity
 
 # from model.models import (BartForConditionalGeneration, )
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "2"
+# os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 # os.environ["CUDA_VISIBLE_DEVICES"] = "1,2,3"
 # torch.autograd.set_detect_anomaly(True) 
 
@@ -51,7 +54,7 @@ class Config(Tap):
     # 如果想通过 .sh 传参数，就必须在代码中，重新进行这一步。
     seed: int = 2022
 
-    pwd: str = '/root/significant-code/TAP/'#'/home/jiangjin/ASR_CORRECTION/TAP/'
+    pwd: str = '/home/users/jiangjin/jiangjin_bupt/ASR_CORRECTION/Cross_modal/TAP/'#'/home/jiangjin/ASR_CORRECTION/TAP/'
 
     # 需修改参数配置
     mode: str = 'train'    
@@ -60,13 +63,13 @@ class Config(Tap):
 
     current_dataset: str = 'AIDATATANG'#'LIBRISPEECH_OTHER'#'LIBRISPEECH'#'LIBRISPEECH_CLEAN_100'#'AIDATATANG' #['AISHELL-1', 'AIDATATANG', 'thchs'][0]
     is_pretrained: bool = True
-    is_phoneme: bool = True #False
+    is_phoneme: bool = False #False
     is_audio: bool = False #False
 
     #!!! 记得改 优化器的参数设置
 
-    is_jointly_train: bool = True #False
-    is_CL_train: bool = True #False # 是否使用对比学习loss训练。
+    is_jointly_train: bool = False #False
+    is_CL_train: bool = False #False # 是否使用对比学习loss训练。
     is_limited_CL_train: bool = False #False
     
     lambda_CL_TA = 1
@@ -1230,7 +1233,7 @@ if __name__ == "__main__":
         model=MODEL_TYPE,
         phoneme_encoder=Phoneme_encoder,
         audio_encoder=Audio_encoder,
-        metric=evaluate.load(config.metric)
+        metric=load_metric(config.metric)
     )
     if config.mode == 'train':
         logger.add(os.path.join(config.log_path, 'train.'+config.current_dataset+'.T-model-log.txt'))
