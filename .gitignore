@@ -2,6 +2,11 @@ pretrained-jointly-TAP-model
 pretrained-T-model
 pretrained-TP-model
 pretrained-TA-model
+pretrained-jointly-TA-model
+pretrained-CL_jointly-TA-model
+pretrained-CL_jointly-TA-model_zero
+pretrained-CL_jointly-TAP-model
+pretrained-CL_jointly-TAP-model_zero
 pretrained-TAP-model
 pretrained-jointly-TP-model
 pretrained-CL_jointly-TAP-model

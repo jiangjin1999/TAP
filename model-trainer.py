@@ -69,6 +69,7 @@ class Config(Tap):
     #!!! 记得改 优化器的参数设置
 
     is_jointly_train: bool = False #False
+    is_jointly_train_zero: bool = False
     is_CL_train: bool = False #False # 是否使用对比学习loss训练。
     is_limited_CL_train: bool = False #False
     
@@ -795,15 +796,19 @@ class Trainer:
                 labels = torch.arange(cos_sim.size(0)).long().to(self.config.get_device())
                 AP_CL_loss = loss_fct(cos_sim, labels)
             # 计算PT之间的CL loss
-            cos_sim = self.config.sim(self.context_data.phoneme_encoder_embedding.unsqueeze(1),\
-                self.context_data.text_encoder_embedding.unsqueeze(0))
-            labels = torch.arange(cos_sim.size(0)).long().to(self.config.get_device())
-            PT_CL_loss = loss_fct(cos_sim, labels)
+            if self.config.is_phoneme is True:
+                cos_sim = self.config.sim(self.context_data.phoneme_encoder_embedding.unsqueeze(1),\
+                    self.context_data.text_encoder_embedding.unsqueeze(0))
+                labels = torch.arange(cos_sim.size(0)).long().to(self.config.get_device())
+                PT_CL_loss = loss_fct(cos_sim, labels)
             # 对三个模态之间的loss加权求和
             self.context_data.CL_loss =  self.config.lambda_CL_TA * TA_CL_loss \
                 + self.config.lambda_CL_AP * AP_CL_loss \
                     + self.config.lambda_CL_PT * PT_CL_loss
-            self.context_data.total_loss_CL = self.context_data.total_loss + self.config.lambda_CL * self.context_data.CL_loss
+            if self.config.is_jointly_train_zero is True:
+                self.context_data.total_loss_CL = self.context_data.total_loss * 0 + self.config.lambda_CL * self.context_data.CL_loss
+            else:
+                self.context_data.total_loss_CL = self.context_data.total_loss + self.config.lambda_CL * self.context_data.CL_loss
             self.context_data.output_loss = torch.tensor(self.context_data.total_loss_CL, requires_grad=True)
         else:
              self.context_data.output_loss = torch.tensor(self.context_data.total_loss, requires_grad=True)
@@ -921,7 +926,7 @@ class Trainer:
             logger.info(f'  num epochs = {self.config.epochs}')
             logger.info(f'   Total train batch size (w. parallel, distributed & accumulation) = {self.config.batch_size * self.config.gradient_accumulation_steps}' )
             logger.info(f"  Gradient Accumulation steps = {self.config.gradient_accumulation_steps}")
-            logger.info(f'  total optimization step = {self.config.max_train_steps}')
+            logger.info(f'  total optimizationq step = {self.config.max_train_steps}')
 
         self.on_train_start()
         for _ in range(self.config.epochs):            
@@ -1114,7 +1119,10 @@ def reset_config_parse(config):
                 if config.is_limited_CL_train is True:
                     config.model_type = config.model_type + 'CL_jointly-TAP-model_limited'
                 else:
-                    config.model_type = config.model_type + 'CL_jointly-TAP-model'
+                    if config.is_jointly_train_zero is True:
+                        config.model_type = config.model_type + 'CL_jointly-TAP-model_zero'
+                    else:
+                        config.model_type = config.model_type + 'CL_jointly-TAP-model'
             else:
                 config.model_type = config.model_type + 'jointly-TAP-model'
         else:
@@ -1122,7 +1130,10 @@ def reset_config_parse(config):
     elif config.is_phoneme is True:
         if config.is_jointly_train is True:
             if config.is_CL_train is True:
-                config.model_type = config.model_type + 'CL_jointly-TP-model'
+                if config.is_jointly_train_zero is True:
+                    config.model_type = config.model_type + 'CL_jointly-TP-model_zero'
+                else:
+                    config.model_type = config.model_type + 'CL_jointly-TP-model'
             else:
                 config.model_type = config.model_type + 'jointly-TP-model'
         else:
@@ -1130,7 +1141,10 @@ def reset_config_parse(config):
     elif config.is_audio is True:
         if config.is_jointly_train is True:
             if config.is_CL_train is True:
-                config.model_type = config.model_type + 'CL_jointly-TA-model'
+                if config.is_jointly_train_zero is True:
+                    config.model_type = config.model_type + 'CL_jointly-TA-model_zero'
+                else:
+                    config.model_type = config.model_type + 'CL_jointly-TA-model'
             else:
                 config.model_type = config.model_type + 'jointly-TA-model'
         else:
